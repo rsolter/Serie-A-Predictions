@@ -1,0 +1,122 @@
+---
+title: "Engineering Serie A Data"
+author: "Ravi Solter"
+date: "February 18, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = F,message = F)
+
+library(dplyr)
+library(tidyr)
+library(zoo)
+
+load(file="seriea_2018_19.rdata")
+load(file="archive_serie.rdata")
+raw_scraped <- rbind(archive,seriea_2018_19)
+
+```
+
+****
+
+This markdown documents the different datasets created from the scraped Serie A data. These include:
+
+- **raw_scraped** - raw data with *season*, *round*, and *game_id* variables added.
+
+- **team_records_df** - weekly result data for each match, including variables measuring form, points gained, overall season records, and rankings for each team. 
+
+- **DF** - Design matrix for modeling on result where each row represents home and away stats for as single match. Except for form, no variables have been modified.
+
+- **DF_trailing** - Design matrix for modeling on result. Similar to **DF**, but all predictors have been replaced with trailing averages from the previous five matches.
+
+- **DF_completion** - Design matrix where future matches have their predictor variables estimated using matrix completion.
+
+
+****
+
+### Data
+
+Scraped from the Serie A website, [http://www.legaseriea.it/en](http://www.legaseriea.it/en), the following data are collected on each team's performance in a given Serie A match:
+
+- Season 
+- Round
+- Home team
+- Away team
+- Goals scored
+- Goals conceded
+- Saves
+- Penalties
+- Shots
+- Shots on and off target
+- Shots on and off target from freekicks
+- Shots within the box
+- Shots from set pieces
+- Fouls
+- Scoring chances
+- Offsides
+- Corners
+- Yellow cards
+- Red cards
+- Balls lost
+- Balls won
+- Attacks down the middle
+- Attacks down the left
+- Attacks down the right
+
+The following features are added:
+
+- **Game ID**: A unique identifier for each match played in Serie A from the 2015-16 season onwards.
+
+- **Team Form**: Form is represented by the proportion of points gained vs those possilbe for the previous five matches. A team with the following record: (W,D,W,D,L) would have collected 8 points from a possible and a form of 0.533. Home and away form are calculated in a similar fashion. Note that the first four matches of each season, teams' form is imputed with the their previous season's overall form.
+
+- **Team Ranking**: Team's rankings within the league is based upon their form in the previous 38 matches. The form here is calcualted teh same as Team form.
+
+
+```{r import,echo=F}
+source(file="engineering_seriea_design_matrix.R")
+source(file="engineering_seriea_design_matrix trailing.R")
+
+```
+
+****
+
+### Datasets
+
+
+
+**team_records_df**:
+
+- *This dataframe includes records from 2015-16 season onwards*
+
+- *There are two rows per match*
+
+
+```{r team_records, echo=F}
+glimpse(team_records_df)
+```
+
+****
+
+**DF**:
+
+- *This dataframe includes records from 2016-17 season onwards*
+
+- *There is one row per match*
+
+```{r DF, echo=F}
+glimpse(DF)
+```
+
+
+****
+**DF_trailing**:
+
+- *This dataframe includes records from 2016-17 season onwards*
+
+- *There are two rows per match with each match/row duplicated for both teams' perspective*
+
+```{r DF_trailing, echo=F}
+glimpse(DF_trailing)
+```
+
