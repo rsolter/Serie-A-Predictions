@@ -17,5 +17,3 @@ team_records_df<-team_records_df %>%
 # Ensuring any records from 2015-16 season have NA for rank
 team_records_df$league_rank <- ifelse(team_records_df$season=="2015-16",
                                       NA,team_records_df$league_rank)
-
-

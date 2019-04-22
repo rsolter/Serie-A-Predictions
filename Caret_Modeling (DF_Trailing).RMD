@@ -3,6 +3,8 @@ title: "Modeling with Caret"
 output:
   html_document:
     df_print: paged
+editor_options: 
+  chunk_output_type: console
 ---
 
 **This document serves as a record of different attempts to model match outcomes using the 'caret' package.**
@@ -32,7 +34,7 @@ DF_Imputed <- predict(ppi,DF)
 ```
 
 
-Next we nest the larger dataset into a list of dataframes for each individual team
+Nesting the larger dataset into a list of dataframes for each individual team
 ```{r Nesting Data}
 # Nesting data by team - creates a list of dataframes, one for each team's results.
 teams <- unique(DF_Imputed$Team)
@@ -60,14 +62,14 @@ nested_DF <- nested_DF[c("Roma","Juventus","Milan","Atalanta","Bologna","Chievov
                          "Genoa","Lazio","Napoli","Inter","Cagliari","Fiorentina","Sampdoria",
                          "Sassuolo","Torino","Udinese","Spal")]
 
-# printing out the number of records for each DF. Notice that teams that have been in SerieA for the past 3+ years will have 100 records, while Empoli and Spal only have 62 records
+# printing out the number of records for each DF. Notice that teams that have been in SerieA for the past 3+ years will have 100 records, while Empoli and Spal only have 63 records
 for(i in 1:length(nested_DF)){ print(dim(nested_DF[[i]]))}
 
 
 ```
 
 
-
+Modeling outcomes using multinom method from the nnet package:
 ```{r Loop Pred, error=F, warning=F, message=F}
 
 # Team part will take all of the individual df's in nested_DF and break them into Train/Test Sets
@@ -109,13 +111,14 @@ for(i in 1:length(team_part)){
   
   # Training RF
   rfFit1 <- train(result~., data=train,
-                  method="rf",trControl=my_TimeControl)
+                  method="multinom",
+                  trControl=my_TimeControl)
   
-  # Output of time  
-  #rfFit1$times$everything
   
   # Prediction
-  rfRes1 <- predict(rfFit1,test)
+  rfRes1 <- predict(rfFit1,
+                    #type = "prob", 
+                    newdata = test)
   actual<- test %>% select(result)
   
   # Results in a confusion matrix
@@ -127,14 +130,13 @@ for(i in 1:length(team_part)){
 
 y <- proc.time() 
 
-y-x # about 8.5 minutes to run
-
-# Troubleshooting? 
-# https://stackoverflow.com/questions/13495041/random-forests-in-r-empty-classes-in-y-and-argument-legth-0
-# https://stackoverflow.com/questions/26828901/warning-message-missing-values-in-resampled-performance-measures-in-caret-tra
+y-x # about 3.5 minutes to run
 
 
 ```
+
+
+
 
 ```{r Results from RF}
 
@@ -190,9 +192,7 @@ ggplot(weekly_results_perc, aes(x=Round,y=Prediction_Perc)) + geom_line() +
   geom_hline(yintercept = mean(weekly_results_perc$Prediction_Perc), color="red") +
   theme_minimal() + ggtitle("Weekly Accuracy") 
 
-# overall avg weekly accuracy is 50% when the TRCONTROL window is not fixed (growwing)
-# It's slightly higher at 53 when is fixed
-
+# overall avg weekly accuracy is 44% 
 
 
 ```

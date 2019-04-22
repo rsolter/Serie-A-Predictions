@@ -9,36 +9,6 @@ library(dplyr)
 date <- Sys.Date()
 round <- 20
  
-if(date > "2019-01-20"){
-  round <- 20
-} 
-if(date > "2019-01-27"){
-  round <- 21
-} 
-if(date > "2019-02-03"){
-  round <- 22
-} 
-if(date > "2019-02-10"){
-  round <- 23
-} 
-if(date > "2019-02-17"){
-  round <- 24
-} 
-if(date > "2019-02-24"){
-  round <- 25
-} 
-if(date > "2019-03-03"){
-  round <- 26
-} 
-if(date > "2019-03-10"){
-  round <- 27
-} 
-if(date > "2019-03-17"){
-  round <- 28
-} 
-if(date > "2019-03-31"){
-  round <- 29
-} 
 if(date > "2019-04-03"){
   round <- 30
 } 
