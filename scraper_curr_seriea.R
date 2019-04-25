@@ -50,7 +50,8 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a","pen_h","pe
            
 
 # Scraping:
-for(i in 1:round){
+for(i in 1:32){
+  print(paste("scraping round ",i," ..",sep=""))
   Sys.sleep(4)
   roundurl <- paste("http://www.legaseriea.it/en/serie-a/fixture-and-results/2018-19/UNICO/UNI/",i,sep="")
   x <- read_html(roundurl)
@@ -269,5 +270,8 @@ for(i in 3:46){
 }
 
 seriea_2018_19 <- data
+#load(file="seriea_2018_19.rdata")
+table(seriea_2018_19$round)
+
 
 save(seriea_2018_19,file="seriea_2018_19.rdata")
