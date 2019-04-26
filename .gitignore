@@ -1,4 +1,8 @@
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
+# Ignore 
+*.rdata
+*.jpeg
+*.RMD
+*.html
+
+
+
