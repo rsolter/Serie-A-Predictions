@@ -11,14 +11,14 @@ set.seed(1234)
 #DataExplorer::create_report(data = DF_DataExplorer_Report, y = "result")
 
 
-#### -- RF of DF_Trailing without Form/Rank variables ---
+#### -- RF of DF ---
 
 # Without using the trailing data, the overall accuracy rate of the model is around 60%
 
 #https://uc-r.github.io/random_forests
 library(ranger)
 DF_new <- DF %>% select(-game_id,-goals_h,-goals_a) # removing goals, game_id
-DF_new_complete <- DF_new[complete.cases(DF_new), ]
+DF_new_complete <- preProcess(DF, method = "knnImpute")
 names(DF_new_complete) <- make.names(names(DF_new_complete))
 
 
@@ -125,7 +125,15 @@ caret::confusionMatrix(pred_ranger$predictions,test$result)
 
 
 
-
+#### Most Important variables
+  # Scoring chances a
+  # shots in the box
+  # shots on
+  # shots
+  # rank vars
+  # form vars
+  # balls won
+  # balls lost
 
 
 
@@ -155,8 +163,6 @@ caret::confusionMatrix(pred_ranger$predictions,test$result)
 
 
 #### -- RF of DF_Trailing ---
-
-#### -- RF of full DF_Trailing  ---
 ## With Trailing
 
 DF_trailing_test <- DF_trailing %>% select(-game_id,-points)
@@ -265,6 +271,8 @@ pred_ranger<-predict(optimal_ranger,trail_test)
 table(pred_ranger$predictions==trail_test$result) # 180/(188+180) -48.9
 
 caret::confusionMatrix(pred_ranger$predictions,trail_test$result) 
+
+
 
 
 
