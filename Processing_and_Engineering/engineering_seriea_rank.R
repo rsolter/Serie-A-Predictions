@@ -1,7 +1,7 @@
 # Serie A - Data Engineering - Ranking
 # Creates weekly rankings of teams based upon previous 38 matches 
 
-source(file="engineering_seriea_form.R")
+source(file = "~/Personal_Git/Soccer_Prediction/SerieA/Processing_and_Engineering/engineering_seriea_form.R")
 
 # calcluating average form for the previous 38 matches
 team_records_df<-team_records_df %>% 

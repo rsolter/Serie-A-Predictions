@@ -323,6 +323,6 @@ archive<-data
 
 #write.csv(archive,"SerieAArchive.csv",row.names = F)
 
-save(archive,file="archive_serie.rdata")
+save(archive,file="Data//archive_serie.rdata")
 
 

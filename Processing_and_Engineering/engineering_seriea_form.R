@@ -8,7 +8,8 @@ library(dplyr)
 library(tidyr)
 library(zoo)
 
-source(file="engineering_seriea_raw_scraped.R")
+source(file = "~/Personal_Git/Soccer_Prediction/SerieA/Processing_and_Engineering/engineering_seriea_raw_scraped.R")
+
 
 ## Calculating records by Season
 
@@ -196,5 +197,5 @@ team_records_df <- left_join(team_records_df,season_records_df)
 
 team_records_df <- rbind(team_records_df,imputed_form_df) %>% arrange(game_id)
 
-rm(imputed_form_df,ind_team_records,raw_scraped,season_records_df,i,seasons,teams)
+rm(imputed_form_df,ind_team_records,season_records_df,i,seasons,teams)
 

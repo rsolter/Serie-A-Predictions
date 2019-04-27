@@ -5,8 +5,8 @@ library(dplyr)
 library(tidyr)
 library(zoo)
 
-load(file="seriea_2018_19.rdata")
-load(file="archive_serie.rdata")
+load(file="~/Personal_Git/Soccer_Prediction/SerieA/Data/seriea_2018_19.rdata")
+load(file="~/Personal_Git/Soccer_Prediction/SerieA/Data/archive_serie.rdata")
 raw_scraped <- rbind(archive,seriea_2018_19)
 
 # Turning round into a factor

@@ -1,3 +1,5 @@
+## This script is just for tears. Gathers Juventus' UCL records since 1997 and visualizes their progress each season.
+
 ## UCL Records
 
 library(rvest)

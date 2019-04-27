@@ -3,7 +3,7 @@ library(DataExplorer)
 library(broom)
 library(e1071)
 library(caret)
-source(file = "engineering_seriea_design_matrix.R")
+source(file = "Processing_and_Engineering/engineering_seriea_design_matrix.R")
 
 set.seed(1234)
 
@@ -164,6 +164,9 @@ caret::confusionMatrix(pred_ranger$predictions,test$result)
 
 #### -- RF of DF_Trailing ---
 ## With Trailing
+
+source(file = "Processing_and_Engineering//engineering_seriea_design_matrix trailing.R",
+       verbose = F)
 
 DF_trailing_test <- DF_trailing %>% select(-game_id,-points)
 DF_trailing_test <- DF_trailing_test[complete.cases(DF_trailing_test), ]

@@ -1,9 +1,10 @@
 # engineering design matrix trailing 
+library(zoo)
 
-
-
-source(file="engineering_seriea_rank.R")
-source(file="engineering_seriea_raw_scraped.R")
+source(file = "~/Personal_Git/Soccer_Prediction/SerieA/Processing_and_Engineering/engineering_seriea_raw_scraped.R",
+        verbose = F)
+source(file = "~/Personal_Git/Soccer_Prediction/SerieA/Processing_and_Engineering/engineering_seriea_rank.R",
+       verbose = F)
 
 # Build a function that calculates the trailing stats for all variables, looping through all teams
 
@@ -100,7 +101,7 @@ for (j in 1:length(teams)){
 
 DF_trailing_2 <- bind_rows(DF_trailing_output)
 
-rm(DF_trailing,DF_trailing_output,i,j,teams,output,raw_scraped)
+rm(DF_trailing,DF_trailing_output,i,j,teams,output)
 
 # Adding in results and converting to Factor for target var
 match_results<-team_records_df %>% 
