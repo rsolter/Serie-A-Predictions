@@ -6,4 +6,6 @@
 
 
 
-.Rproj.user
+.Rproj.user/
+.Rhistory
+.Ruserdata
