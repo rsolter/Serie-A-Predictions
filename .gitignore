@@ -7,7 +7,7 @@
 
 
 # Ignore folders
-.Rproj.user/
+.Rproj.user/**
 
 
 # Specific files
