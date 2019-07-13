@@ -1,11 +1,15 @@
-# Ignore 
+# Ignore file types
 *.rdata
 *.jpeg
 *.RMD
 *.html
+*.rdata
 
 
-
+# Ignore folders
 .Rproj.user/
+
+
+# Specific files
 .Rhistory
 .Ruserdata
