@@ -1,0 +1,735 @@
+---
+title: "Modeling Serie A Outcomes with Caret"
+output:
+  html_document:
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+**This document serves as a record of different attempts to model match outcomes using the 'caret' package.**
+
+## Pre-processing
+
+```{r setup, echo=F, message=F, warning=F}
+library(dplyr)
+library(zoo)
+library(caret)
+library(RANN)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)
+library(broom)
+library(nnet)
+library(caretEnsemble)
+source(file = "~/Personal_Git/Soccer_Prediction/SerieA/Processing_and_Engineering/engineering_seriea_design_matrix trailing.R") # returns 'DF_trailing' in under 2 seconds
+set.seed(5590)
+```
+
+
+First step is to remove extraneous factor variables (game_id,season,round) and impute missing records into a new 'DF_Imputed' dataframe.
+
+```{r Preprocess, echo=T}
+# Imputing missing values with bagImpute (form for newly promoted teams)
+DF <- DF_trailing %>% select(-game_id,-season,-round,-points)
+ppi <- preProcess(DF,method = "bagImpute")
+DF_Imputed <- predict(ppi,DF)
+
+```
+
+'DF_Imputed' contains records for all matches and all teams. To build individual models for each team, 'DF_Imputed' is manipulated to create a list of dataframes, one for each. The result for one individual team (Atalanta) are shown below:
+
+```{r Nesting Data by Team, echo=T}
+# Nesting data by team - creates a list of dataframes, one for each team's results.
+teams <- unique(DF_Imputed$Team)
+nested_DF <- list()
+
+for (i in teams){
+  temp_df <- DF_Imputed %>% filter(Team==i)
+  nested_DF[[i]] <- temp_df
+}
+
+
+nested_DF_orig <- nested_DF
+
+# Filtering to 2018-19 teams only
+# Pescara, HellasVerona, Crotone, Benevento, Palermo
+nested_DF <- nested_DF[c("Roma","Juventus","Milan","Atalanta","Bologna","Chievoverona","Empoli",
+                         "Genoa","Lazio","Napoli","Inter","Cagliari","Fiorentina","Sampdoria",
+                         "Sassuolo","Torino","Udinese","Spal","Parma","Frosinone")]
+
+# for(i in 1:length(nested_DF)){ print(dim(nested_DF[[i]]))}
+
+# Filtering out Parma, Frosinone which have no data from previous Serie A season
+
+nested_DF <- nested_DF[c("Roma","Juventus","Milan","Atalanta","Bologna","Chievoverona","Empoli","Genoa","Lazio","Napoli","Inter","Cagliari","Fiorentina","Sampdoria","Sassuolo","Torino","Udinese","Spal")]
+
+# printing out the number of records for each DF. Notice that teams that have been in SerieA for the past 3+ years will have 108 records, while Empoli and Spal only have 70 records
+for(i in 1:length(nested_DF)){ print(dim(nested_DF[[i]]))}
+
+nested_DF[4] %>% str()
+```
+
+
+
+## Exploring Approaches for Atalanta 
+
+Before making predictions for all teams, will focus on a single team, Atalanta.
+
+The following steps take place before splitting the data:
+
+- Checking for zero and near-zero variance explanatory variables
+- Removing highlighy correlated variables
+- Removing specific variables (Team and opponent names, red cards for both home and away teams)
+
+Splitting of the data into training and test sets is done among the three most recent seasons. 2016-17 and 2017-18 are used for training, while the 2018-19 season is used for testing model accuracy. 
+
+Training parameters used ..
+
+```{r Four Methods for ATL, error=F, warning=F, message=F}
+
+# https://rpubs.com/ezgi/classification
+
+# testing with one team -- Atlanta
+atl<-nested_DF[[4]]
+atl$Venue <- as.factor(atl$Venue)
+
+# Check for near0 variance 
+nzv <- nearZeroVar(atl, saveMetrics= TRUE)
+
+# Removing team names, home and away red cards
+atl<-atl[,-c(1,2,19,44)]
+
+# calculate correlation matrix
+#correlationMatrix <- cor(atl[ ,2:50])
+# find attributes that are highly corrected (ideally >0.75)
+#highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+# removing highly correlated variabels (10)
+#atl <- atl[,-highlyCorrelated]
+
+# Splitting
+atl_test <- atl[(nrow(atl)-33):nrow(atl), ]
+atl_train <- atl[1:(nrow(atl)-33), ]
+
+
+
+TrainingParameters <- trainControl(method = "repeatedcv", 
+                                   number = 10, 
+                                   repeats=10,
+                                   summaryFunction = mnLogLoss,
+                                   classProbs = T)
+
+
+### SVM 
+
+SVModel <- train(result ~ ., data = atl_train,
+                 method = "svmPoly",
+                 trControl= TrainingParameters,
+                 tuneGrid = data.frame(degree = 1,
+                                       scale = 1,
+                                       C = 1),
+                 preProcess = c("pca","scale","center"),
+                 na.action = na.omit
+)
+
+SVMPredictions <-predict(SVModel, atl_test,type = "prob")
+
+# Create confusion matrix
+cmSVM <-confusionMatrix(SVMPredictions, atl_test$result)
+print(cmSVM)
+
+
+### Random Forest
+
+# Train a model with above parameters. We will use C5.0 algorithm
+DecTreeModel <- train(result ~ ., data = atl_train, 
+                      method = "C5.0",
+                      preProcess=c("scale","center"),
+                      trControl= TrainingParameters,
+                      na.action = na.omit
+)
+
+#Predictions
+DTPredictions <-predict(DecTreeModel, atl_test, na.action = na.pass,type = "prob")
+# Print confusion matrix and results
+cmTree <-confusionMatrix(DTPredictions, atl_test$result)
+print(cmTree)
+
+# Baseline accuracy for RF is 
+
+
+
+### Naive algorithm
+
+
+NaiveModel <- train(atl_train[,-42], atl_train$result, 
+                    method = "nb",
+                    preProcess=c("scale","center"),
+                    trControl= TrainingParameters,
+                    na.action = na.omit
+)
+
+#Predictions
+NaivePredictions <-predict(NaiveModel, atl_test, na.action = na.pass,type = "prob")
+cmNaive <-confusionMatrix(NaivePredictions, atl_test$result)
+
+
+###  Neural Networks
+NNModel <- train(atl_train[,-42], atl_train$result, 
+                  method = "nnet",
+                  trControl= TrainingParameters,
+                  preProcess=c("scale","center"),
+                  na.action = na.omit
+)
+
+NNPredictions <-predict(NNModel, atl_test,type = "prob")
+# Create confusion matrix
+cmNN <-confusionMatrix(NNPredictions, atl_test$result)
+
+
+
+### Extracting Predictions/Probabilities
+
+ 
+ALT_Model_list <- list(svm = SVModel,
+                   tree = DecTreeModel,
+                   NB = NaiveModel,
+                   NN = NNModel)
+
+extractProb(ALT_Model_list)
+
+
+
+```
+
+
+## Ensemble with ATL and caretEnsemble
+
+Firstly, we will check the correlations between different models. Selecting the two un-correlated and high accurate models for ensemble modeling gives the optimal results. Unfortunately, since caret package does not support ensemble method for multi-class predictions, we will not perform ensemble methods to make predictions.
+
+
+
+```{r, eval=F}
+# Create models
+econtrol <- trainControl(method="cv", number=10, savePredictions=TRUE, classProbs=TRUE)
+model_list <- caretList(result ~., data=atl_train,
+                    methodList=c("svmPoly", "nnet", "C5.0", "nb","xgbTree","multinom"),
+                    preProcess=c("scale","center"),
+                    trControl = econtrol
+)
+
+
+results <- resamples(model_list)
+
+summary(results)
+
+# Box and whiskers Accuracy Plots
+scales <- list(x=list(relation="free"), y=list(relation="free"))
+bwplot(results, scales=scales)
+
+
+# density plots of accuracy
+densityplot(results, scales=scales, pch = "|")
+
+
+# pair-wise scatterplots of predictions to compare models
+splom(results)
+
+# What is model correlation?
+
+mcr <-modelCor(results)
+print (mcr)
+
+cmNN #17% accurate, 44% accurate when optimizing on LogLoss
+cmNaive #29% accurate, 52% accurate when optimizing on LogLoss
+cmSVM #41% accurate, 41% accurate when optimizing on LogLoss
+cmTree #50% accurate, 58% accurate when optimizing on LogLoss
+
+cmNN_sensitivity <-  cmNN$byClass[,1]
+cmNaive_sensitivity <-  cmNaive$byClass[,1]
+cmSVM_sensitivity <-  cmSVM$byClass[,1]
+cmTree_sensitivity <-  cmTree$byClass[,1]
+
+
+```
+
+
+## Round by Round prediction with ATL
+```{r ATL roundbyround}
+
+# https://rpubs.com/ezgi/classification
+
+# testing with one team -- Atlanta
+atl<-nested_DF[[4]]
+atl$Venue <- as.factor(atl$Venue)
+
+# Check for near0 variance 
+nzv <- nearZeroVar(atl, saveMetrics= TRUE)
+
+# Removing Team and opponent red cards
+atl<-atl[,-c(1,2,19,44)]
+
+
+# Look at the first 38 observations (16-17 season)
+
+#https://stackoverflow.com/questions/38339115/using-caret-createtimeslices-for-growing-window-prediction-with-machine-learning
+
+
+atl1617 <- atl[1:38, ]
+
+index1617 <- nrow(atl1617)
+
+
+TrainingParameters <- trainControl(summaryFunction = mnLogLoss,
+                                     classProbs = T)
+
+TimeSlices <- createTimeSlices(1:index1617, 10, horizon = 1,
+                            fixedWindow = FALSE, skip = 0)
+
+
+totalSlices <- length(TimeSlices$train)
+
+CS5FitTime <- vector("list", totalSlices)
+Prediction <- vector("list", totalSlices)
+Accuracy   <- vector("list", totalSlices)
+
+
+k <- 1:totalSlices
+
+for(i in seq_along(k)){
+
+    CS5FitTime[[i]] <- train(result~.,
+                             data = atl1617[TimeSlices$train[[i]],],
+                             trControl= TrainingParameters,
+                             method = "C5.0",
+                             preProc = c("center", "scale"))
+
+    Prediction[[i]] <- predict(plsFitTime[[i]], 
+                              atl1617[TimeSlices$test[[i]],])
+
+    Accuracy[[i]] <- confusionMatrix(Prediction[[i]], 
+                                     atl1617[TimeSlices$test[[i]],]$result)$overall[1]
+}
+
+
+
+
+
+
+### tidyier appraoch
+library(purrr)
+
+customFunction <- function(x, y) {
+    model <- train(result ~ .,
+                   data = atl1617,
+                   method = "C5.0",
+                    preProc = c("center", "scale"))
+
+    prediction <- predict(model, atl1617$result)
+
+    accuracy <- confusionMatrix(prediction, 
+                                atl1617$result)$overall[1]
+
+    return(list(prediction, accuracy))
+}
+
+results <- map2_df(TimeSlices$train, TimeSlices$test, customFunction)
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+## Looping through four methods on each team
+
+```{r Four Methods for all teams, error=F, warning=F, message=F, eval=F}
+
+time_start<-Sys.time()
+
+
+four_method_results <- list()
+
+for (i in 1:length(nested_DF)){
+
+  temp <- nested_DF[[i]]
+  team_data <- temp 
+  team_data$Venue <- as.factor(team_data$Venue)
+  
+  # Removing team and opponent names and red cards
+  team_data <- team_data[ ,-c(1,2,19,44)]
+  
+  # Removing variables with nearZeroVar
+  #zero_Var_features <- caret::nearZeroVar(team_data)
+  #team_data <- team_data[, -zero_Var_features]
+  
+  # Removing any highly correlated features
+  # calculate correlation matrix
+  
+  end<-ncol(team_data)-1
+  correlationMatrix <- cor(team_data[ ,2:end])
+  
+  # find attributes that are highly corrected (ideally >0.75)
+  highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+  # removing highly correlated variabels (10)
+  team_data <- team_data[,-highlyCorrelated]
+  
+  # Splitting into training and test (2018-19)
+  team_data_test <- team_data[(nrow(team_data)-33):nrow(team_data), ]
+  team_data_train <- team_data[1:(nrow(team_data)-33), ]
+
+  # Setting Training Parameters
+  TrainingParameters <- trainControl(method = "repeatedcv", 
+                                     number = 10, 
+                                     repeats=10,
+                                     summaryFunction = mnLogLoss,
+                                     classProbs = T)
+
+  
+  ### SVM 
+
+  SVModel <- train(result ~ ., data = team_data_train,
+                 method = "svmPoly",
+                 trControl= TrainingParameters,
+                 tuneGrid = data.frame(degree = 1,
+                                       scale = 1,
+                                       C = 1),
+                 preProcess = c("pca","scale","center"),
+                 na.action = na.omit
+                  )
+  SVMPredictions <-predict(SVModel, team_data_test)
+  cmSVM <-confusionMatrix(SVMPredictions, team_data_test$result)
+
+  
+  ### Random Forest
+  
+  DecTreeModel <- train(result ~ ., data = team_data_train, 
+                      method = "C5.0",
+                      preProcess=c("scale","center"),
+                      trControl= TrainingParameters,
+                      na.action = na.omit
+                      )
+
+  DTPredictions <-predict(DecTreeModel, team_data_test, na.action = na.pass,type = "raw")
+  cmTree <-confusionMatrix(DTPredictions, team_data_test$result)
+
+
+  ### Naive algorithm
+
+
+  NaiveModel <- train(team_data_train[,-42], team_data_train$result, 
+                      method = "nb",
+                      preProcess=c("scale","center"),
+                      trControl= TrainingParameters,
+                      na.action = na.omit)
+
+
+  NaivePredictions <-predict(NaiveModel, team_data_test, na.action = na.pass)
+  cmNaive <-confusionMatrix(NaivePredictions, team_data_test$result)
+
+
+  ###  Neural Network
+  
+  NNModel <- train(team_data_train[,-42], team_data_train$result, 
+                    method = "nnet",
+                    trControl= TrainingParameters,
+                    preProcess=c("scale","center"),
+                    na.action = na.omit)
+
+  NNPredictions <-predict(NNModel, team_data_test)
+  cmNN <-confusionMatrix(NNPredictions, team_data_test$result)
+    
+
+# Aggregating accuracy results  
+  
+cmNN_sensitivity <-  cmNN$byClass[,1]
+cmNN_overall <- cmNN$overall[1]
+NN_res <- c(cmNN_overall,cmNN_sensitivity)
+
+cmNaive_sensitivity <-  cmNaive$byClass[,1]
+cmNaive_overall <- cmNaive$overall[1]
+Naive_res <- c(cmNaive_overall,cmNaive_sensitivity)
+
+cmSVM_sensitivity <-  cmSVM$byClass[,1]
+cmSVM_overall <- cmSVM$overall[1]
+SVM_res <- c(cmSVM_overall,cmSVM_sensitivity)
+
+cmTree_sensitivity <-  cmTree$byClass[,1]
+cmTree_overall <- cmTree$overall[1]
+Tree_res <- c(cmTree_overall,cmTree_sensitivity)
+
+accuracies <- as.data.frame(rbind(Tree_res,SVM_res,Naive_res,NN_res)) 
+accuracies$Team <- nested_DF[[i]]$Team %>% unique() %>% as.character()
+accuracies<-accuracies %>% rownames_to_column()
+
+four_method_results[[i]] <- accuracies
+
+}
+
+time_end<-Sys.time()
+
+time_end-time_start ## Takes about 50 minutes - 1hr to run all models
+
+# https://rpubs.com/ezgi/classification
+
+
+
+```
+
+
+
+```{r Visualizing Four_Models Output, eval=F}
+
+fmv<-bind_rows(four_method_results)
+
+ggplot(fmv, aes(x=Team,y=Accuracy, fill=rowname)) + geom_bar(stat="identity",position = "dodge") +
+  coord_flip() + theme_minimal()
+
+
+fmv %>% group_by(rowname) %>%
+  summarise(mean_acc=mean(Accuracy),
+            mean_acc_Draw=mean(`Class: Draw`),
+            mean_acc_Opp=mean(`Class: Opp`),
+            mean_acc_Team=mean(`Class: Team`))
+
+```
+
+
+
+## Multinom Logistic Regression
+
+Modeling outcomes using multinom method from the nnet package:
+```{r Loop Pred Multinom, error=F, warning=F, message=F, eval=F}
+
+# Team part will take all of the individual df's in nested_DF and break them into Train/Test Sets
+team_part <- list()
+
+for(i in names(nested_DF)){
+  
+  temp <- nested_DF[[i]]
+  obs<-nrow(temp)
+  
+  # Test set is the final season (last 32 observations)
+  temp_test <- temp[(obs-31):obs, ]
+  
+  # Train set is all observations that come before
+  temp_train <- temp[1:(obs-31), ] 
+
+  Out<-list(i,temp_train,temp_test)  
+  
+  team_part[[i]] <- Out
+}
+
+
+# Create Timeslices TimeControl
+my_TimeControl <- trainControl(method="timeslice",
+                               initialWindow = 10,
+                               horizon=1,
+                               fixedWindow = TRUE)
+
+# Creating a second list which will hold the team name, model fit, prediction, and accuracy
+team_model_mnom <- list()
+x <- proc.time() 
+for(i in 1:length(team_part)){
+
+  temp <- team_part[[i]]
+  
+  name <- temp[[1]]
+  train <- temp[[2]]
+  test <- temp[[3]]
+  
+  # Training RF
+  rfFit1 <- train(result~., data=train,
+                  method="multinom",
+                  trControl=my_TimeControl)
+  
+  
+  # Prediction
+  rfRes1 <- predict(rfFit1,
+                    #type = "prob", 
+                    newdata = test)
+  actual<- test %>% select(result)
+  
+  # Results in a confusion matrix
+  Results<-confusionMatrix(rfRes1, as.factor(actual$result))
+  
+  team_model_mnom[[i]] <- list(name,rfFit1,rfRes1,Results)
+
+}
+
+y <- proc.time() 
+
+y-x # about 3.5 minutes to run
+
+
+```
+
+
+```{r Results from Multinom, eval=F}
+
+# Extracting Team name, accuracy
+
+mnom_results <- list()
+for(i in 1:length(team_model_mnom)){
+
+  name<- team_model_mnom[[i]][[1]]
+  acc <- team_model_mnom[[i]][[4]]$overall[[1]]  
+
+  r <- as.data.frame(acc)
+
+  mnom_results[[i]] <- r
+  }
+
+mnom_final <- bind_rows(mnom_results)
+rownames(mnom_final) <- names(team_part)
+mnom_final <- mnom_final %>% rownames_to_column()
+
+mnom_final %>% arrange(desc(acc))
+
+
+```
+
+```{r Visualizaing Team-by-Team accuracy - Multinom, eval=F}
+
+
+weekly_results_mnom <- list()
+
+for(i in 1:18){
+  
+  
+  temp_team_model <- team_model_mnom[[i]]
+  
+  weekly_pred <- temp_team_model[[3]]
+  
+  weekly_actual <- team_part[[i]][[3]]$result  
+  
+  weekly_acc <- weekly_pred==weekly_actual
+  
+  weekly_results_mnom[[i]] <- as.data.frame(weekly_acc)
+  
+}
+
+weekly_results_mnom <- bind_cols(weekly_results_mnom)
+colnames(weekly_results_mnom) <- names(nested_DF)
+
+weekly_results_mnom$Round <- 1:32
+
+weekly_results_long_mnom<-gather(weekly_results_mnom,"Team","Prediction",1:18)
+
+weekly_results_perc_mnom <- weekly_results_long_mnom %>% group_by(Round) %>% summarise(Prediction_Perc=mean(Prediction))
+
+ggplot(weekly_results_long_mnom, aes(x=Round,y=Team,fill=Prediction)) + geom_tile() +  theme_minimal() +
+  ggtitle("Weekly Accuracy by Team")
+
+ggplot(weekly_results_perc_mnom, aes(x=Round,y=Prediction_Perc)) + geom_line() + 
+  geom_hline(yintercept = mean(weekly_results_perc_mnom$Prediction_Perc), color="red") +
+  geom_hline(yintercept = 0.5, linetype=2, color="grey") +
+  theme_minimal() + ggtitle("Weekly Accuracy") 
+
+# overall avg weekly accuracy is 44% 
+
+
+```
+
+
+
+
+## Modeling outcomes using 'ranger' method from the ranger package:
+```{r Loop Pred, error=F, warning=F, message=F, eval=F}
+
+# Team part will take all of the individual df's in nested_DF and break them into Train/Test Sets
+team_part <- list()
+
+for(i in names(nested_DF)){
+  
+  temp <- nested_DF[[i]]
+  obs<-nrow(temp)
+  
+  # Test set is the final season (last 32 observations)
+  temp_test <- temp[(obs-31):obs, ]
+  
+  # Train set is all observations that come before
+  temp_train <- temp[1:(obs-31), ] 
+
+  Out<-list(i,temp_train,temp_test)  
+  
+  team_part[[i]] <- Out
+}
+
+
+# Create Timeslices TimeControl
+my_TimeControl <- trainControl(method="timeslice",
+                               initialWindow = 10,
+                               horizon=1,
+                               fixedWindow = TRUE)
+
+# Creating a second list which will hold the team name, model fit, prediction, and accuracy
+team_model <- list()
+x <- proc.time() 
+for(i in 1:length(team_part)){
+
+  temp <- team_part[[i]]
+  
+  name <- temp[[1]]
+  train <- temp[[2]]
+  test <- temp[[3]]
+  
+  # Training RF
+  rfFit1 <- train(result~., data=train,
+                  method="ranger",
+                  trControl=my_TimeControl)
+  
+  
+  # Prediction
+  rfRes1 <- predict(rfFit1,
+                    #type = "prob", 
+                    newdata = test)
+  actual<- test %>% select(result)
+  
+  # Results in a confusion matrix
+  Results<-confusionMatrix(rfRes1, as.factor(actual$result))
+  
+  team_model[[i]] <- list(name,rfFit1,rfRes1,Results)
+
+}
+
+y <- proc.time() 
+
+y-x # about 3.5 minutes to run
+
+
+```
+
+
+```{r Results from RF, eval=F}
+
+# Extracting Team name, accuracy
+
+rf_results <- list()
+for(i in 1:length(team_model)){
+
+  name<- team_model[[i]][[1]]
+  acc <- team_model[[i]][[4]]$overall[[1]]  
+
+  r <- as.data.frame(acc)
+
+  rf_results[[i]] <- r
+  }
+
+rf_final <- bind_rows(rf_results)
+rownames(rf_final) <- names(team_part)
+
+rf_final %>% arrange(desc(acc))
+
+
+```
