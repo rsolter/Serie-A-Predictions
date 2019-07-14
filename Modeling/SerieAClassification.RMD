@@ -84,7 +84,8 @@ The following steps take place before splitting the data:
 
 Splitting of the data into training and test sets is done among the three most recent seasons. 2016-17 and 2017-18 are used for training, while the 2018-19 season is used for testing model accuracy. 
 
-Training parameters used ..
+Training parameters used:
+- Method used is 'timeslice' which allows for predictions to be made in a chronological order and based upon previous results.
 
 ```{r Four Methods for ATL, error=F, warning=F, message=F}
 
@@ -112,15 +113,19 @@ atl_test <- atl[(nrow(atl)-33):nrow(atl), ]
 atl_train <- atl[1:(nrow(atl)-33), ]
 
 
+# Tmeslice notes -- https://topepo.github.io/caret/data-splitting.html#time
 
-TrainingParameters <- trainControl(method = "repeatedcv", 
-                                   number = 10, 
-                                   repeats=10,
+TrainingParameters <- trainControl(method = "timeslice", 
+                                   initialWindow = 5,
+                                   horizon=1,
+                                   fixedWindow=F,
                                    summaryFunction = mnLogLoss,
                                    classProbs = T)
 
 
 ### SVM 
+
+# https://www.kdnuggets.com/2016/07/support-vector-machines-simple-explanation.html
 
 SVModel <- train(result ~ ., data = atl_train,
                  method = "svmPoly",
@@ -132,11 +137,13 @@ SVModel <- train(result ~ ., data = atl_train,
                  na.action = na.omit
 )
 
+# Predictions & Evaluations
 SVMPredictions <-predict(SVModel, atl_test,type = "prob")
+SVMPredictions$Prediction <- colnames(SVMPredictions)[max.col(SVMPredictions,ties.method="first")]
+SVM_Eval <- cbind(SVMPredictions,atl_test$result)
+names(SVM_Eval)[5] <- "Actual"
+SVM_Eval$Accuracy <- SVM_Eval$Actual==SVM_Eval$Prediction
 
-# Create confusion matrix
-cmSVM <-confusionMatrix(SVMPredictions, atl_test$result)
-print(cmSVM)
 
 
 ### Random Forest
@@ -149,19 +156,19 @@ DecTreeModel <- train(result ~ ., data = atl_train,
                       na.action = na.omit
 )
 
-#Predictions
-DTPredictions <-predict(DecTreeModel, atl_test, na.action = na.pass,type = "prob")
-# Print confusion matrix and results
-cmTree <-confusionMatrix(DTPredictions, atl_test$result)
-print(cmTree)
+# Predictions & Evaluations
 
-# Baseline accuracy for RF is 
+DTPredictions <-predict(DecTreeModel, atl_test, na.action = na.pass,type = "prob")
+DTPredictions$Prediction <- colnames(DTPredictions)[max.col(DTPredictions,ties.method="first")]
+DTP_Eval <- cbind(DTPredictions,atl_test$result)
+names(DTP_Eval)[5] <- "Actual"
+DTP_Eval$Accuracy <- DTP_Eval$Actual==DTP_Eval$Prediction
+
+
 
 
 
 ### Naive algorithm
-
-
 NaiveModel <- train(atl_train[,-42], atl_train$result, 
                     method = "nb",
                     preProcess=c("scale","center"),
@@ -169,36 +176,73 @@ NaiveModel <- train(atl_train[,-42], atl_train$result,
                     na.action = na.omit
 )
 
-#Predictions
+# Predictions & Evaluations
 NaivePredictions <-predict(NaiveModel, atl_test, na.action = na.pass,type = "prob")
-cmNaive <-confusionMatrix(NaivePredictions, atl_test$result)
+NaivePredictions$Prediction <- colnames(NaivePredictions)[max.col(NaivePredictions,ties.method="first")]
+Naive_Eval <- cbind(NaivePredictions,atl_test$result)
+names(Naive_Eval)[5] <- "Actual"
+Naive_Eval$Accuracy <- Naive_Eval$Actual==Naive_Eval$Prediction
+
 
 
 ###  Neural Networks
-NNModel <- train(atl_train[,-42], atl_train$result, 
-                  method = "nnet",
-                  trControl= TrainingParameters,
-                  preProcess=c("scale","center"),
-                  na.action = na.omit
-)
+#NNModel <- train(atl_train[,-42], atl_train$result, 
+#                  method = "nnet",
+#                  trControl= TrainingParameters,
+#                  preProcess=c("scale","center"),
+#                  na.action = na.omit
+#)
 
-NNPredictions <-predict(NNModel, atl_test,type = "prob")
+#NNPredictions <-predict(NNModel, atl_test,type = "prob")
+
+
 # Create confusion matrix
-cmNN <-confusionMatrix(NNPredictions, atl_test$result)
+# Predictions & Evaluations
+
+#cmNN <-confusionMatrix(NNPredictions, atl_test$result)
+#cmNN$Prediction <- colnames(cmNN)[max.col(cmNN,ties.method="first")]
+##NN_Eval <- cbind(cmNN,atl_test$result)
+#names(NN_Eval)[5] <- "Actual"
+#NN_Eval$Accuracy <- NN_Eval$Actual==NN_Eval$Prediction
 
 
 
 ### Extracting Predictions/Probabilities
 
- 
-ALT_Model_list <- list(svm = SVModel,
-                   tree = DecTreeModel,
-                   NB = NaiveModel,
-                   NN = NNModel)
+# Distribution of results:
+table(atl_test$result) # 9 Draws, 10 Opp, 15 Team
 
-extractProb(ALT_Model_list)
+# Overall Accuracy
+table(DTP_Eval$Accuracy) # 20/34 -- 58%
+table(Naive_Eval$Accuracy) # 18/34 -- 52.9%
+table(SVM_Eval$Accuracy) # 13/34  -- 38%
+
+# by Outcome
+DTP_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+Naive_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+SVM_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
 
 
+### Ensemble Method - Avgs
+
+ensemble_Prob <- matrix(NA,nrow=nrow(atl_test),ncol=3)
+
+for(i in 1:nrow(atl_test)){
+  for (j in 1:3){
+    x<-mean(DTP_Eval[i,j],Naive_Eval[i,j],SVM_Eval[i,j])
+    ensemble_Prob[i,j] <- x
+  }
+}
+
+ensemble_Eval <-as.data.frame(ensemble_Prob)
+names(ensemble_Eval) <- c("Draw","Opp","Team")
+ensemble_Eval$Prediction <- colnames(ensemble_Eval)[max.col(ensemble_Eval,ties.method="first")]
+ensemble_Eval <- cbind(ensemble_Eval,atl_test$result)
+names(ensemble_Eval)[5] <- "Actual"
+ensemble_Eval$Accuracy <- ensemble_Eval$Actual==ensemble_Eval$Prediction
+
+table(ensemble_Eval$Accuracy) # 20/34 -- 58.8%
+DTP_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
 
 ```
 
@@ -255,7 +299,7 @@ cmTree_sensitivity <-  cmTree$byClass[,1]
 
 
 ## Round by Round prediction with ATL
-```{r ATL roundbyround}
+```{r ATL roundbyround, eval=F}
 
 # https://rpubs.com/ezgi/classification
 
