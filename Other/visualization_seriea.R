@@ -5,7 +5,7 @@ library(ggplot2)
 library(scales)
 library(ggcorrplot)
 
-source(file="engineering_seriea_design_matrix.R")
+source(file="Processing_and_Engineering//engineering_seriea_design_matrix.R")
 
 # Plotting Chances home, away vs results
 ggplot(DF, aes(x=scoring_chances_h, y=scoring_chances_a, color=result)) + 
@@ -38,7 +38,7 @@ ggcorrplot(cor,  type = "upper", outline.col = "white", hc.order = TRUE, p.mat =
 
 
 
-
+## Visualizing Team Records
 team_record_viz<-team_records_df %>% select(season,round,Team,Venue,points,form_all,venue_form) %>% as.data.frame()
 
 team_record_viz$results <-ifelse(team_record_viz$points==3,"W",
