@@ -166,8 +166,6 @@ DTP_Eval$Accuracy <- DTP_Eval$Actual==DTP_Eval$Prediction
 
 
 
-
-
 ### Naive algorithm
 NaiveModel <- train(atl_train[,-42], atl_train$result, 
                     method = "nb",
@@ -242,9 +240,226 @@ names(ensemble_Eval)[5] <- "Actual"
 ensemble_Eval$Accuracy <- ensemble_Eval$Actual==ensemble_Eval$Prediction
 
 table(ensemble_Eval$Accuracy) # 20/34 -- 58.8%
-DTP_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+ensemble_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+
+# Improvement Over Time
+DTP_Eval$DTP_RunningAvgAccuracy <- cumsum(DTP_Eval$Accuracy) / seq_along(DTP_Eval$Accuracy)
+Naive_Eval$NAIVE_RunningAvgAccuracy <- cumsum(Naive_Eval$Accuracy) / seq_along(Naive_Eval$Accuracy)
+SVM_Eval$SVM_RunningAvgAccuracy <- cumsum(SVM_Eval$Accuracy) / seq_along(SVM_Eval$Accuracy)
+ensemble_Eval$Ensemble_RunningAvgAccuracy <- cumsum(ensemble_Eval$Accuracy) / seq_along(ensemble_Eval$Accuracy)
+
+over_time_Eval_comp <- cbind(DTP_Eval$DTP_RunningAvgAccuracy,
+                        Naive_Eval$NAIVE_RunningAvgAccuracy,
+                        SVM_Eval$SVM_RunningAvgAccuracy,
+                        ensemble_Eval$Ensemble_RunningAvgAccuracy) %>%
+  as.data.frame()
+
+names(over_time_Eval_comp) <- c("DTP","Naive","SVM","Ensemble")
+
+over_time_Eval_comp$Round <- 1:nrow(over_time_Eval_comp)
+
+over_time_Eval_comp <- over_time_Eval_comp %>% gather("Model","CumAccuracy",-Round)
+
+ggplot(over_time_Eval_comp, aes(x=Round, y=CumAccuracy, group=Model, color=Model)) + geom_line() +  facet_wrap(vars(Model))
 
 ```
+
+
+
+## Loop of 3 Methods for all Teams
+
+```{r loop viz,warning=F,message=F}
+
+plot_list <- list()
+
+
+
+for (k in 1:length(nested_DF)){
+  
+temp<-nested_DF[[k]]
+temp$Venue <- as.factor(temp$Venue)
+
+Team_name <- as.character(unique(temp$Team))
+
+print(Team_name)
+
+# Check for near0 variance 
+nzv <- nearZeroVar(temp, saveMetrics= TRUE)
+
+# Removing team names, home and away red cards
+temp<-temp[,-c(1,2,19,44)]
+
+# calculate correlation matrix
+#correlationMatrix <- cor(temp[ ,2:50])
+# find attributes that are highly corrected (ideally >0.75)
+#highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+# removing highly correlated variabels (10)
+#temp <- temp[,-highlyCorrelated]
+
+# Splitting
+temp_test <- temp[(nrow(temp)-33):nrow(temp), ]
+temp_train <- temp[1:(nrow(temp)-33), ]
+
+
+# Tmeslice notes -- https://topepo.github.io/caret/data-splitting.html#time
+
+TrainingParameters <- trainControl(method = "timeslice", 
+                                   initialWindow = 5,
+                                   horizon=1,
+                                   fixedWindow=F,
+                                   summaryFunction = mnLogLoss,
+                                   classProbs = T)
+
+
+### SVM 
+
+# https://www.kdnuggets.com/2016/07/support-vector-machines-simple-explanation.html
+
+SVModel <- train(result ~ ., data = temp_train,
+                 method = "svmPoly",
+                 trControl= TrainingParameters,
+                 tuneGrid = data.frame(degree = 1,
+                                       scale = 1,
+                                       C = 1),
+                 preProcess = c("pca","scale","center"),
+                 na.action = na.omit
+)
+
+# Predictions & Evaluations
+SVMPredictions <-predict(SVModel, temp_test,type = "prob")
+SVMPredictions$Prediction <- colnames(SVMPredictions)[max.col(SVMPredictions,ties.method="first")]
+SVM_Eval <- cbind(SVMPredictions,temp_test$result)
+names(SVM_Eval)[5] <- "Actual"
+SVM_Eval$Accuracy <- SVM_Eval$Actual==SVM_Eval$Prediction
+
+
+
+### Random Forest
+
+# Train a model with above parameters. We will use C5.0 algorithm
+DecTreeModel <- train(result ~ ., data = temp_train, 
+                      method = "C5.0",
+                      preProcess=c("scale","center"),
+                      trControl= TrainingParameters,
+                      na.action = na.omit
+)
+
+# Predictions & Evaluations
+
+DTPredictions <-predict(DecTreeModel, temp_test, na.action = na.pass,type = "prob")
+DTPredictions$Prediction <- colnames(DTPredictions)[max.col(DTPredictions,ties.method="first")]
+DTP_Eval <- cbind(DTPredictions,temp_test$result)
+names(DTP_Eval)[5] <- "Actual"
+DTP_Eval$Accuracy <- DTP_Eval$Actual==DTP_Eval$Prediction
+
+
+
+### Naive algorithm
+NaiveModel <- train(temp_train[,-42], temp_train$result, 
+                    method = "nb",
+                    preProcess=c("scale","center"),
+                    trControl= TrainingParameters,
+                    na.action = na.omit
+)
+
+# Predictions & Evaluations
+NaivePredictions <-predict(NaiveModel, temp_test, na.action = na.pass,type = "prob")
+NaivePredictions$Prediction <- colnames(NaivePredictions)[max.col(NaivePredictions,ties.method="first")]
+Naive_Eval <- cbind(NaivePredictions,temp_test$result)
+names(Naive_Eval)[5] <- "Actual"
+Naive_Eval$Accuracy <- Naive_Eval$Actual==Naive_Eval$Prediction
+
+
+
+### Extracting Predictions/Probabilities
+
+# Distribution of results:
+table(temp_test$result) # 9 Draws, 10 Opp, 15 Team
+
+# Overall Accuracy
+table(DTP_Eval$Accuracy) # 20/34 -- 58%
+table(Naive_Eval$Accuracy) # 18/34 -- 52.9%
+table(SVM_Eval$Accuracy) # 13/34  -- 38%
+
+# by Outcome
+DTP_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+Naive_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+SVM_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+
+
+### Ensemble Method - Avgs
+
+ensemble_Prob <- matrix(NA,nrow=nrow(temp_test),ncol=3)
+
+for(i in 1:nrow(temp_test)){
+  for (j in 1:3){
+    x<-mean(DTP_Eval[i,j],Naive_Eval[i,j],SVM_Eval[i,j])
+    ensemble_Prob[i,j] <- x
+  }
+}
+
+ensemble_Eval <-as.data.frame(ensemble_Prob)
+names(ensemble_Eval) <- c("Draw","Opp","Team")
+ensemble_Eval$Prediction <- colnames(ensemble_Eval)[max.col(ensemble_Eval,ties.method="first")]
+ensemble_Eval <- cbind(ensemble_Eval,temp_test$result)
+names(ensemble_Eval)[5] <- "Actual"
+ensemble_Eval$Accuracy <- ensemble_Eval$Actual==ensemble_Eval$Prediction
+
+table(ensemble_Eval$Accuracy) # 20/34 -- 58.8%
+ensemble_Eval %>% group_by(Actual) %>% summarise(Class_Accuracy=mean(Accuracy))
+
+# Improvement Over Time
+DTP_Eval$DTP_RunningAvgAccuracy <- cumsum(DTP_Eval$Accuracy) / seq_along(DTP_Eval$Accuracy)
+Naive_Eval$NAIVE_RunningAvgAccuracy <- cumsum(Naive_Eval$Accuracy) / seq_along(Naive_Eval$Accuracy)
+SVM_Eval$SVM_RunningAvgAccuracy <- cumsum(SVM_Eval$Accuracy) / seq_along(SVM_Eval$Accuracy)
+ensemble_Eval$Ensemble_RunningAvgAccuracy <- cumsum(ensemble_Eval$Accuracy) / seq_along(ensemble_Eval$Accuracy)
+
+over_time_Eval_comp <- cbind(DTP_Eval$DTP_RunningAvgAccuracy,
+                        Naive_Eval$NAIVE_RunningAvgAccuracy,
+                        SVM_Eval$SVM_RunningAvgAccuracy,
+                        ensemble_Eval$Ensemble_RunningAvgAccuracy) %>%
+  as.data.frame()
+
+names(over_time_Eval_comp) <- c("DTP","Naive","SVM","Ensemble")
+
+over_time_Eval_comp$Round <- 1:nrow(over_time_Eval_comp)
+
+over_time_Eval_comp <- over_time_Eval_comp %>% gather("Model","CumAccuracy",-Round)
+
+
+
+
+plot1<-ggplot(over_time_Eval_comp, aes(x=Round, y=CumAccuracy, group=Model, color=Model)) + geom_line() +  facet_wrap(vars(Model)) + ggtitle(Team_name)
+  
+
+### Outputting Results
+
+
+plot_list[[k]] <- list(DTP_Eval,Naive_Eval,SVM_Eval,ensemble_Eval,plot1)
+names(plot_list)[[k]]<-Team_name
+}
+
+
+
+for(p in 1:length(plot_list)){
+ teamname <- names(plot_list)[p]
+  
+ extracted_plot <- plot_list[[p]][5]
+ extracted_plot <- extracted_plot[[1]]
+ ggsave(extracted_plot,filename = paste(teamname," Model_Accuracy.png")) 
+}
+
+
+```
+
+
+
+
+
+
+
+
+
 
 
 ## Ensemble with ATL and caretEnsemble
