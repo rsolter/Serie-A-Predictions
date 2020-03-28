@@ -1,5 +1,5 @@
 # This script gathers historical ELO ratings produced by the website http://clubelo.com/API.
-# Code is included for Italy, England, and Spain
+# Code is included for Italy and Spain
 
 
 
@@ -10,10 +10,10 @@ library(dplyr)
 # Downloading one file to get all team names to inform URLS to scrape
 # Same process is followed below for Spain and England
 
-download.file(url="http://api.clubelo.com/2020-01-01","elo_master.csv")
+download.file(url="http://api.clubelo.com/2020-01-01","01 Scrapers/elo_master.csv")
 
 # Reading in all team names
-elo<-read.csv("elo_master.csv",stringsAsFactors = F)
+elo<-read.csv("01 Scrapers/elo_master.csv",stringsAsFactors = F)
 
 
 
@@ -31,18 +31,18 @@ elo<-read.csv("elo_master.csv",stringsAsFactors = F)
       Team<-italy_teams$Club[i]
       url_path <- paste("http://api.clubelo.com/",Team,sep="")
 
-      csv_title<-paste(Team,"Italy",Sys.Date(),".csv",sep="_")
+      csv_title<-paste("01 Scrapers/Italy/",Team,"Italy",Sys.Date(),".csv",sep="_")
 
       download.file(url=url_path,csv_title)
 
     }
 
     # Reading in all ELO History CSVs filtered to only include records from 2012 onwards
-    files <- list.files(pattern = "\\may19.csv$")
+    files <- list.files(path = "01 Scrapers/Italy/",pattern = "\\.csv$")
 
     imported_csv <- list()
     for (i in files){
-      tmp <-read.csv(i,stringsAsFactors = F)
+      tmp <-read.csv(paste("01 Scrapers/Italy/",i,sep=""),stringsAsFactors = F)
       tmp$To <- as.Date(tmp$To,format = "%Y-%m-%d")
       tmp$From <- as.Date(tmp$From,format = "%Y-%m-%d")
       tmp$From_yr <- lubridate::year(tmp$From)
@@ -54,15 +54,13 @@ elo<-read.csv("elo_master.csv",stringsAsFactors = F)
     italy_elos<-bind_rows(imported_csv)
     italy_elos <- italy_elos %>% select(-Rank,-Country,-Level,-From_yr)
 
-    save(italy_elos,file="italy_elos.rdata")
+    save(italy_elos,file="01 Scrapers/italy_elos.rdata")
 
 
 
 
 
 ## Spain
-
-    setwd("/home/ravisolter/Personal_Git/Other Scrapers/England_Elo/")
 
     esp_teams <- elo %>% filter(Country=="ESP") %>% select(Club) %>% unique() %>% as.vector()
 
@@ -75,18 +73,18 @@ elo<-read.csv("elo_master.csv",stringsAsFactors = F)
       Team<-esp_teams$Club[i]
       url_path <- paste("http://api.clubelo.com/",Team,sep="")
 
-      csv_title<-paste(Team,"ES_may19.csv",sep="_")
+      csv_title<-paste("01 Scrapers/Spain/",Team,"Spain",Sys.Date(),".csv",sep="_")
 
       download.file(url=url_path,csv_title)
 
     }
 
     # Reading in all ELO History CSVs filtered to only include records from 2012 onwards
-    files <- list.files(pattern = "\\may19.csv$")
+    files <- list.files(path = "01 Scrapers/Spain/",pattern = "\\.csv$")
 
     imported_csv <- list()
     for (i in files){
-      tmp <-read.csv(i,stringsAsFactors = F)
+      tmp <-read.csv(paste("01 Scrapers/Spain/",i,sep=""),stringsAsFactors = F)
       tmp$To <- as.Date(tmp$To,format = "%Y-%m-%d")
       tmp$From <- as.Date(tmp$From,format = "%Y-%m-%d")
       tmp$From_yr <- lubridate::year(tmp$From)
@@ -98,21 +96,4 @@ elo<-read.csv("elo_master.csv",stringsAsFactors = F)
     spain_elos<-bind_rows(imported_csv)
     spain_elos <- spain_elos %>% select(-Rank,-Country,-Level,-From_yr)
 
-
-## England
-
-    eng_teams <- elo %>% filter(Country=="ENG") %>% select(Club) %>% unique() %>% as.vector()
-
-    for (i in 1:nrow(eng_teams)){
-
-      slp<-sample(c(2,3,4,5),1)
-      Sys.sleep(slp)
-
-      Team<-eng_teams$Club[i]
-      url_path <- paste("http://api.clubelo.com/",Team,sep="")
-
-      csv_title<-paste(Team,"ENG_may19.csv",sep="_")
-
-      download.file(url=url_path,csv_title)
-
-    }
+    save(spain_elos,file="spain_elos.rdata")
