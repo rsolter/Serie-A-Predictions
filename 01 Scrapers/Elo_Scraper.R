@@ -54,7 +54,7 @@ elo<-read.csv("01 Scrapers/elo_master.csv",stringsAsFactors = F)
     italy_elos<-bind_rows(imported_csv)
     italy_elos <- italy_elos %>% select(-Rank,-Country,-Level,-From_yr)
 
-    save(italy_elos,file="01 Scrapers/italy_elos.rdata")
+    save(italy_elos,file="01 Scrapers/Data/italy_elos.rdata")
 
 
 
@@ -96,4 +96,4 @@ elo<-read.csv("01 Scrapers/elo_master.csv",stringsAsFactors = F)
     spain_elos<-bind_rows(imported_csv)
     spain_elos <- spain_elos %>% select(-Rank,-Country,-Level,-From_yr)
 
-    save(spain_elos,file="spain_elos.rdata")
+    save(italy_elos,file="01 Scrapers/Data/Spain_elos.rdata")

@@ -1,41 +1,11 @@
-# This script grabs current (2018-19) season data for Serie A matches
+# This script grabs current (2019-20) season data for Serie A matches
 
 library(xml2)
 library(rvest)
 library(stringr)
 library(dplyr)
 
-# Bunch of if() statements to find which rounds have been completed
-date <- Sys.Date()
-round <- 20
 
-if(date > "2019-04-03"){
-  round <- 30
-}
-if(date > "2019-04-07"){
-  round <- 31
-}
-if(date > "2019-04-14"){
-  round <- 32
-}
-if(date > "2019-04-20"){
-  round <- 33
-}
-if(date > "2019-04-28"){
-  round <- 34
-}
-if(date > "2019-05-05"){
-  round <- 35
-}
-if(date > "2019-05-12"){
-  round <- 36
-}
-if(date > "2019-05-19"){
-  round <- 37
-}
-if(date > "2019-05-26"){
-  round <- 38
-} else{}
 
 
 # Make the df:
@@ -50,7 +20,7 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a","pen_h","pe
 
 
 # Scraping:
-for(i in 1:32){
+for(i in 18:38){
   print(paste("scraping round ",i," ..",sep=""))
   Sys.sleep(4)
   roundurl <- paste("http://www.legaseriea.it/en/serie-a/fixture-and-results/2018-19/UNICO/UNI/",i,sep="")
@@ -269,7 +239,15 @@ for(i in 3:46){
   data[,i] <- as.numeric(data[,i])
 }
 
-seriea_2018_19 <- data
+seriea_2018_19_p1 <- data #1-10
+seriea_2018_19_p2 <- data #11-15
+seriea_2018_19_p3 <- data # 17
+
+seriea_18_19_115<-rbind(seriea_2018_19_p1,seriea_2018_19_p2)
+
+save(seriea_18_19_115,file="01 Scrapers/Data/seriea_18_19_115.rdata")
+
+seriea_2018_19_p3 <- data %>% filter(round<19)
 #load(file="seriea_2018_19.rdata")
 table(seriea_2018_19$round)
 

@@ -16,8 +16,8 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a","pen_h","pe
 
 
 # Selecting years from the archive to scrape
-arch <- c("2014-15")
-#arch <- c("2015-16","2016-17","2017-18")
+arch <- c("2018-19")
+#arch <- c("2015-16","2016-17","2017-18","2018-19)
 
 ## 2016-2017, Round 2 throws an error with a foreited between Sas and Pescara 
 ## http://www.legaseriea.it/en/serie-a/archive/2016-17/UNICO/UNI/2
