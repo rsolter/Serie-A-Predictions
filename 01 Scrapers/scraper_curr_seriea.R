@@ -6,8 +6,6 @@ library(stringr)
 library(dplyr)
 
 
-
-
 # Make the df:
 data <- data.frame(matrix(NA, nrow = 0, ncol = 48))
 names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a","pen_h","pen_a","shots_h","shots_a",
