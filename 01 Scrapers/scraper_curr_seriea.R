@@ -18,7 +18,7 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a","pen_h","pe
 
 
 # Scraping:
-for(i in 18:38){
+for(i in 33:38){
   print(paste("scraping round ",i," ..",sep=""))
   Sys.sleep(4)
   roundurl <- paste("http://www.legaseriea.it/en/serie-a/fixture-and-results/2018-19/UNICO/UNI/",i,sep="")

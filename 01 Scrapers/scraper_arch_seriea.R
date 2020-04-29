@@ -28,7 +28,7 @@ roundurl_stem <<- paste("http://www.legaseriea.it/en/serie-a/archive/",arch[[k]]
 print(arch[k])
 #print(roundurl_stem)
 
-for(i in 1:38){
+for(i in 33:38){
   print(i)
   Sys.sleep(4)
   roundurl <- paste(roundurl_stem,i,sep="")
