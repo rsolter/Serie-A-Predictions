@@ -19,11 +19,13 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a",
            "season","round","poss_h","poss_a","completed_passes_h","completed_passes_a",
            "passing_acc_h","passing_acc_a","key_passes_h","key_passes_a","recoveries_h","recoveries_a")
 
+curr_season <- "2019-20"
+
 # Scraping:
 for(i in 1:25){
   print(paste("scraping round ",i," ..",sep=""))
   Sys.sleep(4)
-  roundurl <- paste("http://www.legaseriea.it/en/serie-a/fixture-and-results/2019-20/UNICO/UNI/",i,sep="")
+  roundurl <- paste("http://www.legaseriea.it/en/serie-a/fixture-and-results/",curr_season,"/UNICO/UNI/",i,sep="")
   x <- read_html(roundurl)
 
   for(j in 1:10){
@@ -254,7 +256,7 @@ for(i in 1:25){
     attacks_left_a <- html_text(attacks_left_a)
     a[48] <- attacks_left_a
     
-    a[49] <- arch[[k]]
+    a[49] <- curr_season
     
     a[50] <- i
     
