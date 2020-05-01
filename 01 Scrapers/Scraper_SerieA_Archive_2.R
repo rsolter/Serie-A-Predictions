@@ -6,7 +6,7 @@ library(rvest)
 library(stringr)
 
 
-data <- data.frame(matrix(NA, nrow = 0, ncol = 60))
+data <- data.frame(matrix(NA, nrow = 0, ncol = 61))
 names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a",
            "pen_h","pen_a","shots_h","shots_a","shots_on_h","shots_on_a","shot_on_fk_h","shot_on_fk_a",
            "shots_off_h","shots_off_a","shot_off_fk_h","shot_off_fk_a","shots_box_h","shots_box_a",
@@ -16,7 +16,7 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a",
            "fast_breaks_h","fast_breaks_a","crosses_h","crosses_a","long_balls_h","long_balls_a",
            "attacks_middle_h","attacks_middle_a",
            "attacks_right_h","attacks_right_a","attacks_left_h","attacks_left_a",
-           "season","round","poss_h","poss_a","completed_passes_h","completed_passes_a",
+           "season","round","poss_h","poss_a","match_date","completed_passes_h","completed_passes_a",
            "passing_acc_h","passing_acc_a","key_passes_h","key_passes_a","recoveries_h","recoveries_a")
 
 # Selecting years from the archive to scrape
@@ -77,6 +77,12 @@ for (k in 1:length(arch)){
       poss_a <- html_node(report,xpath='/html/body/main/div[1]/section/section[4]/div[2]/div[4]')
       poss_a <- html_text(poss_a)
       a[52] <- poss_a
+      
+      
+      match_date <- html_node(report,xpath='/html/body/main/div[1]/section/div[1]/div[1]/span')
+      match_date <- html_text(match_date)
+      match_date <- substr(match_date,1,10)
+      a[53] <- match_date
       
       goals_h <- html_node(report,xpath='/html/body/main/div[1]/section/div[1]/div[3]')
       goals_h <- html_text(goals_h)
@@ -273,40 +279,49 @@ for (k in 1:length(arch)){
         
       completed_pass_h <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[20]/div[2]')
       completed_pass_h <- html_text(completed_pass_h)
-      a[53] <- completed_pass_h
+      a[54] <- completed_pass_h
       
       completed_pass_a <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[20]/div[4]')
       completed_pass_a <- html_text(completed_pass_a)
-      a[54] <- completed_pass_a
+      a[55] <- completed_pass_a
       
       pass_acc_h <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[21]/div[2]')
       pass_acc_h <- html_text(pass_acc_h)
       pass_acc_h <- as.numeric(substr(pass_acc_h,1,2))/100
-      a[55] <- pass_acc_h
+      a[56] <- pass_acc_h
       
       pass_acc_a <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[21]/div[4]')
       pass_acc_a <- html_text(pass_acc_a)
       pass_acc_a <- as.numeric(substr(pass_acc_a,1,2))/100
-      a[56] <- pass_acc_a
+      a[57] <- pass_acc_a
       
       key_pass_h <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[25]/div[2]')
       key_pass_h <- html_text(key_pass_h)
-      a[57] <- key_pass_h
+      a[58] <- key_pass_h
 
       key_pass_a <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[25]/div[4]')
       key_pass_a <- html_text(key_pass_a)
-      a[58] <- key_pass_a
+      a[59] <- key_pass_a
       
       recoveries_h <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[26]/div[2]')
       recoveries_h <- html_text(recoveries_h)
-      a[59] <- recoveries_h
+      a[60] <- recoveries_h
 
       recoveries_a <-html_node(report,xpath='//*[@id="statistiche-comparate"]/div[26]/div[4]')
       recoveries_a <- html_text(recoveries_a)
-      a[60] <- recoveries_a
+      a[61] <- recoveries_a
       
             
       data[(nrow(data)+1),] <- a
+      
+      rm(attacks_left_a,attacks_left_h,attacks_middle_a,attacks_middle_h,attacks_right_a,attacks_right_h,
+         box_a,box_h,chances_a,chances_h,cor_a,cor_h,crosses_a,crosses_h,fast_breaks_a,fast_breaks_h,fouls_a,
+         fouls_h,goals_a,goals_h,long_balls_a,long_balls_h,match_date,off_a,off_h,off_shot_a,off_shot_h,off_shot_fk_a,
+         off_shot_fk_h,pen_a,pen_h,poss_a,poss_h,red_a,red_h,saves_a,saves_h,set_o_t_a,set_o_t_h,shot_a,shot_h,shot_o_t_a,
+         shot_o_t_h,shot_o_t_fk_a,shot_o_t_fk_h,shots_sp_off_a,shots_sp_off_h,yell_a,yell_h,
+         completed_pass_a,completed_pass_h,key_pass_a,key_pass_h,pass_acc_a,pass_acc_h,recoveries_a,recoveries_h)
+      
+      
     }
     
   }
@@ -329,16 +344,11 @@ for(i in 3:48){
 for(i in 51:52){
   data[,i] <- as.numeric(substr(data[,i],1,2))/100
 }
-
-for(i in 53:60){
+data$match_date <- as.Date(data$match_date)
+for(i in 54:61){
   data[,i] <- as.numeric(data[,i])
 }
 
-
-names(data) <- names
-
-
-  
 
 archive1819<-data %>% unique()
 

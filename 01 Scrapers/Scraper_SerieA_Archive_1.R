@@ -6,7 +6,7 @@ library(rvest)
 library(stringr)
 
 
-data <- data.frame(matrix(NA, nrow = 0, ncol = 52))
+data <- data.frame(matrix(NA, nrow = 0, ncol = 53))
 names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a",
            "pen_h","pen_a","shots_h","shots_a","shots_on_h","shots_on_a","shot_on_fk_h","shot_on_fk_a",
            "shots_off_h","shots_off_a","shot_off_fk_h","shot_off_fk_a","shots_box_h","shots_box_a",
@@ -16,8 +16,10 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a",
            "fast_breaks_h","fast_breaks_a","crosses_h","crosses_a","long_balls_h","long_balls_a",
            "attacks_middle_h","attacks_middle_a",
            "attacks_right_h","attacks_right_a","attacks_left_h","attacks_left_a",
-           "season","round","poss_h","poss_a")
+           "season","round","poss_h","poss_a","match_date")
 
+
+arch <- c("2017-18")
 
 t1<-proc.time()
 for (k in 1:length(arch)){
@@ -73,6 +75,11 @@ for (k in 1:length(arch)){
       poss_a <- html_node(report,xpath='/html/body/main/div[1]/section/section[4]/div[2]/div[4]')
       poss_a <- html_text(poss_a)
       a[52] <- poss_a
+      
+      match_date <- html_node(report,xpath='/html/body/main/div[1]/section/div[1]/div[1]/span')
+      match_date <- html_text(match_date)
+      match_date <- substr(match_date,1,10)
+      a[53] <- match_date
       
       goals_h <- html_node(report,xpath='/html/body/main/div[1]/section/div[1]/div[3]')
       goals_h <- html_text(goals_h)
@@ -263,15 +270,26 @@ for (k in 1:length(arch)){
       a[50] <- i
       
       data[(nrow(data)+1),] <- a
+      
+      rm(attacks_left_a,attacks_left_h,attacks_middle_a,attacks_middle_h,attacks_right_a,attacks_right_h,
+         box_a,box_h,chances_a,chances_h,cor_a,cor_h,crosses_a,crosses_h,fast_breaks_a,fast_breaks_h,fouls_a,
+         fouls_h,goals_a,goals_h,long_balls_a,long_balls_h,match_date,off_a,off_h,off_shot_a,off_shot_h,off_shot_fk_a,
+         off_shot_fk_h,pen_a,pen_h,poss_a,poss_h,red_a,red_h,saves_a,saves_h,set_o_t_a,set_o_t_h,shot_a,shot_h,shot_o_t_a,
+         shot_o_t_h,shot_o_t_fk_a,shot_o_t_fk_h,shots_sp_off_a,shots_sp_off_h,yell_a,yell_h)
     }
     
   }
 }
 
 # correcting for the match that was forfeited.
-#data[398,3:4] <- c(2,1)
+# data[398,3:4] <- c(2,1)
+
+
+t2<-proc.time()
+
 
 colnames(data) <- names
+
 for(i in c(1:2,49:50)){
   data[,i] <- as.factor(data[,i])
 }
@@ -282,10 +300,10 @@ for(i in 51:52){
   data[,i] <- as.numeric(substr(data[,i],1,2))/100
 }
 
-t2<-proc.time()
+data$match_date <- as.Date(data$match_date)
 
 
-archive<-data %>% unique()
+archive <-data %>% unique()
 
 archive$completed_passes_h <- NA
 archive$completed_passes_a <- NA
