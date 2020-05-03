@@ -7,39 +7,13 @@ library(tidyverse)
 load(file="00 Data/italy_elos.rdata")
 italy_elos$Club <- as.factor(italy_elos$Club)
 
-
 load(file="00 Data/archive1920.rdata")
 load(file="00 Data/archive_seriea_18_19.rdata")
 load(file="00 Data/archive_seriea_1516_1718.rdata")
 
 df_raw <- rbind(archive,archive1819,archive1920)
 
-save(df_raw,file="00 Data/full_raw_scraped.rdata")
-
-
-
-#### Resolving Team name discrepancies between datasets ----
-
-
-elo_names <- italy_elos$Club %>% unique()
-raw_names <- df_raw$Team_h %>% unique()
-
-# 4 raw_names not found in elo_names
-raw_names[!raw_names%in%elo_names]
-
-#italy_elos$Club <- ifelse(italy_elos$Club=="Verona","HeallasVerona",
-#                          ifelse(italy_elos$Club=="Verona","HeallasVerona",
-#                          ifelse(italy_elos$Club=="Verona","HeallasVerona",
-#                          ifelse(italy_elos$Club=="Verona","HeallasVerona",italy_elos$Club))
-
-# joining elo data with df_raw
-
-df_raw <- df_raw %>% filter(!Team_h%in%raw_names[!raw_names%in%elo_names]) %>%
-  filter(!Team_a%in%raw_names[!raw_names%in%elo_names])
-
-
-
-
+rm(archive,archive1819,archive1920)
 
 #### Processing Raw Data ----
 
@@ -57,9 +31,6 @@ df_raw$season <- factor(df_raw$season,
                         levels=c("2015-16","2016-17",
                                  "2017-18","2018-19","2019-20"))
 
-# converting round into integer
-df_raw$round <- as.integer(df_raw$round)
-
 # creating outcome variable
 df_raw$outcome <- ifelse(df_raw$goals_h>df_raw$goals_a,"H",
                       ifelse(df_raw$goals_h<df_raw$goals_a,"A",
@@ -70,6 +41,8 @@ df_raw$outcome <- factor(df_raw$outcome)
 
 # Removing any columns with NA (due to changing variables collected season by season)
 df_raw <- df_raw[ , colSums(is.na(df_raw)) == 0]
+
+save(df_raw,file="00 Data/full_raw_scraped.rdata")
 
 
 #### Feature Selection using Random Forest ----
@@ -90,6 +63,7 @@ Variables_To_Drop <- c("pen_h","pen_a","shot_off_fk_a","shot_off_fk_h",
 # removing 'unimportant' variables, drops from 14 features
 df_raw <- df_raw %>% select(-Variables_To_Drop)
 
+rm(Filter_Forest,raw_to_filter,Variables_To_Drop)
 
 
 #### Breaking into team based dataframes ----
@@ -119,7 +93,8 @@ for(i in 1:length(team_names)){
   
 ## Reordering away_records to match
   away_records <- away_records %>% select(home_records_names)
-    
+
+## Binding records together  
   team_records <- rbind(home_records,away_records) %>% 
     arrange(match_date) %>% as.data.frame()
   
@@ -143,6 +118,8 @@ for(i in 1:length(team_names)){
   team_records <- team_records %>% select(-ends_with("opp"))
 
   team_dfs[[i]] <- team_records
+  
+  rm(away_records,home_records,team_elos,team_records,home_records_names,away_records_names,tmp_team)
   
 }
 
@@ -190,10 +167,48 @@ for(k in 1:length(team_dfs)){
 
 ### Re-creating and joining opposition data ----
 
-master_trailing <- bind_rows(team_trailing) %>% arrange(match_id)
+master_trailing <- bind_rows(team_trailing) %>% as.data.frame() %>% arrange(match_id)
+colnames(master_trailing)[22] <- "Elo_team"
 
 # Exactly 2 copies of each match_id
 # master_trailing %>% group_by(match_id) %>% tally() %>% select(n) %>% unique()
 
+# creating opposition data
+opp_trailing <- master_trailing
 
+opp_names <- names(opp_trailing)
+opp_names <- stringr::str_replace(opp_names,"_team$","_opp")
+names(opp_trailing) <- opp_names
+
+
+final_data <- list()
+
+teams <- master_trailing$Team_team %>% unique()
+for (f in 1:length(teams)){
+  
+  tmp_team <- teams[f]
+  
+  # isolating team records
+  team_records <- master_trailing %>% filter(Team_team==tmp_team) 
+  
+  # finding matching records for opposition
+  opp_records <- opp_trailing %>% 
+    filter(match_id%in%team_records$match_id) %>% 
+    filter(!Team_opp==tmp_team) %>%
+    select(-outcome,-Points_gained)
+  
+  final_records <- left_join(team_records,opp_records) 
+  
+  # Re-ordering columns
+  final_records <- final_records[,c(19,17,14,15,1,23,20,21,2:13,16,18,22,24:38)]
+  
+  # cleaning up team column names
+  names(final_records)[5] <- "Team"
+  names(final_records)[6] <- "Opp"
+  
+  final_data[[f]] <- final_records
+  
+}
+
+save(final_data,file="00 Data/Team_split_Data.rdata")
 

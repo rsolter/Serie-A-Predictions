@@ -55,10 +55,19 @@ elo<-read.csv("01 Scrapers/elo_master.csv",stringsAsFactors = F)
       imported_csv[[i]] <- tmp
     }
 
-    italy_elos<-bind_rows(imported_csv)
+    italy_elos<-bind_rows(imported_csv) %>% unique()
     italy_elos <- italy_elos %>% select(-Rank,-Country,-Level,-From_yr)
-
-    save(italy_elos,file="01 Scrapers/Data/italy_elos.rdata")
+    
+    
+    # Renaming two clubs to match other dataset
+    italy_elos$Club <- ifelse(italy_elos$Club=="Verona","HellasVerona",
+                              ifelse(italy_elos$Club=="Chievo","Chievoverona",
+                                     italy_elos$Club))
+    
+    italy_elos$Club <- as.factor(italy_elos$Club)
+    
+    save(italy_elos,file="00 Data/italy_elos.rdata")
+    
 
 
 
