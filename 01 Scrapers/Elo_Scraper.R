@@ -10,7 +10,7 @@ library(dplyr)
 # Downloading one file to get all team names to inform URLS to scrape
 # Same process is followed below for Spain and England
 
-download.file(url="http://api.clubelo.com/2020-01-01","01 Scrapers/elo_master.csv")
+download.file(url="http://api.clubelo.com/2019-01-01","01 Scrapers/elo_master.csv")
 
 # Reading in all team names
 elo<-read.csv("01 Scrapers/elo_master.csv",stringsAsFactors = F)
@@ -20,15 +20,19 @@ elo<-read.csv("01 Scrapers/elo_master.csv",stringsAsFactors = F)
 # Italy
 
     italy_teams <- elo %>% filter(Country=="ITA") %>% select(Club) %>% unique() %>% as.vector()
+    
+    italy_teams <- italy_teams$Club
+    
+    italy_teams <- c(italy_teams,"Palermo","Carpi","Chievo") # note that Verona is Hellas Verona
 
     # Downloading ELO history for every team in italy_teams
-    for (i in 1:nrow(italy_teams)){
+    for (i in 1:length(italy_teams)){
 
       # random sleep timer
       slp<-sample(c(2,3,4,5),1)
       Sys.sleep(slp)
 
-      Team<-italy_teams$Club[i]
+      Team<-italy_teams[i]
       url_path <- paste("http://api.clubelo.com/",Team,sep="")
 
       csv_title<-paste("01 Scrapers/Italy/",Team,"Italy",Sys.Date(),".csv",sep="_")

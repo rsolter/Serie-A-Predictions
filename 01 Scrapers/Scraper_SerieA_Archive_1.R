@@ -19,7 +19,7 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a",
            "season","round","poss_h","poss_a","match_date")
 
 
-arch <- c("2017-18")
+arch <- c("2015-16","2016-17","2017-18")
 
 t1<-proc.time()
 for (k in 1:length(arch)){
@@ -29,7 +29,7 @@ for (k in 1:length(arch)){
   
   for(i in 1:38){
     print(i)
-    Sys.sleep(4)
+    Sys.sleep(3)
     roundurl <- paste(roundurl_stem,i,sep="")
     x <- read_html(roundurl)
     
@@ -300,7 +300,7 @@ for(i in 51:52){
   data[,i] <- as.numeric(substr(data[,i],1,2))/100
 }
 
-data$match_date <- as.Date(data$match_date)
+data$match_date <- as.Date(data$match_date,format = "%d/%m/%Y")
 
 
 archive <-data %>% unique()

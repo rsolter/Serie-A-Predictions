@@ -335,16 +335,21 @@ t2<-proc.time()
 #data[398,3:4] <- c(2,1)
 
 colnames(data) <- names
+
 for(i in c(1:2,49:50)){
   data[,i] <- as.factor(data[,i])
 }
+
 for(i in 3:48){
   data[,i] <- as.numeric(data[,i])
 }
+
 for(i in 51:52){
   data[,i] <- as.numeric(substr(data[,i],1,2))/100
 }
-data$match_date <- as.Date(data$match_date)
+
+data$match_date <- as.Date(data$match_date,format = "%d/%m/%Y")
+
 for(i in 54:61){
   data[,i] <- as.numeric(data[,i])
 }

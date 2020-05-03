@@ -325,7 +325,7 @@ for(i in 3:48){
 for(i in 51:52){
   data[,i] <- as.numeric(substr(data[,i],1,2))/100
 }
-data$match_date <- as.Date(data$match_date)
+data$match_date <- as.Date(data$match_date,format = "%d/%m/%Y")
 for(i in 54:61){
   data[,i] <- as.numeric(data[,i])
 }
