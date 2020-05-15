@@ -79,6 +79,10 @@ for(i in 1:length(team_names)){
   
   home_records <- df_raw %>% filter(Team_h==tmp_team)
   away_records <- df_raw %>% filter(Team_a==tmp_team)
+  
+  ## Adding home_match info
+  home_records$home_match <- 1
+  away_records$home_match <- 0
 
 ## Renaming home and away columns into team/opp    
   home_records_names <- names(home_records)
@@ -91,6 +95,9 @@ for(i in 1:length(team_names)){
   away_records_names <- stringr::str_replace(away_records_names,"_h$","_opp")
   names(away_records) <- away_records_names
   
+  
+
+    
 ## Reordering away_records to match
   away_records <- away_records %>% select(home_records_names)
 
@@ -168,7 +175,8 @@ for(k in 1:length(team_dfs)){
 ### Re-creating and joining opposition data ----
 
 master_trailing <- bind_rows(team_trailing) %>% as.data.frame() %>% arrange(match_id)
-colnames(master_trailing)[22] <- "Elo_team"
+last <- ncol(master_trailing)
+colnames(master_trailing)[last] <- "Elo_team"
 
 # Exactly 2 copies of each match_id
 # master_trailing %>% group_by(match_id) %>% tally() %>% select(n) %>% unique()
@@ -179,6 +187,9 @@ opp_trailing <- master_trailing
 opp_names <- names(opp_trailing)
 opp_names <- stringr::str_replace(opp_names,"_team$","_opp")
 names(opp_trailing) <- opp_names
+
+# Removing home_match from opp 
+opp_trailing <- opp_trailing %>% select(-home_match)
 
 
 final_data <- list()
@@ -200,12 +211,19 @@ for (f in 1:length(teams)){
   final_records <- left_join(team_records,opp_records) 
   
   # Re-ordering columns
-  final_records <- final_records[,c(19,17,14,15,1,23,20,21,2:13,16,18,22,24:38)]
+  final_records <- final_records[,c(19,17,14,15,1,24,21,20,22,2:13,16,18,23,25:39)]
   
   # cleaning up team column names
   names(final_records)[5] <- "Team"
   names(final_records)[6] <- "Opp"
   
+  # Chaning characters to factors
+  final_records$Team <- as.factor(final_records$Team)
+  final_records$Team <- as.factor(final_records$Team)
+  final_records$home_match <- as.factor(final_records$home_match)
+  final_records$outcome <- as.factor(final_records$outcome)
+  
+    
   final_data[[f]] <- final_records
   
 }

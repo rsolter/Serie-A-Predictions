@@ -19,7 +19,7 @@ names <- c("Team_h","Team_a","goals_h","goals_a","saves_h","saves_a",
            "season","round","poss_h","poss_a","match_date")
 
 
-arch <- c("2015-16","2016-17","2017-18")
+arch <- c("2014-15")
 
 t1<-proc.time()
 for (k in 1:length(arch)){
@@ -34,6 +34,8 @@ for (k in 1:length(arch)){
     x <- read_html(roundurl)
     
     #print(roundurl)
+    
+  
     
     for(j in 1:10){
       a <- c()
