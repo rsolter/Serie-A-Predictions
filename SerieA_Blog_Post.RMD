@@ -1,0 +1,417 @@
+---
+output: 
+  md_document:
+    variant: markdown_github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(randomForest)
+library(tidyverse)
+library(kableExtra)
+library(caret)
+library(e1071)
+
+load(file="00 Data/full_raw_scraped.rdata")
+load(file="00 Data/italy_elos.rdata")
+italy_elos$Club <- as.factor(italy_elos$Club)
+```
+
+
+### 1. Objective and Background
+
+
+
+****
+
+### 2. Gathering Data
+
+The data for this project was gathered from the official [Serie A website](http://www.legaseriea.it/en) and its match reports from the 2015-16 season through the current 2019-20 season. Note that due to the effects of the Covid-19, all matches were postponed in Italy after the first week of March, 2020. The scrapers used the `rvest` package and can be found [here](https://github.com/rsolter/Serie-A-Predictions/tree/master/01%20Scrapers). Weekly [Elo](https://en.wikipedia.org/wiki/Elo_rating_system) scores for each team were also downloaded from the website Clubelo.com using their [API](http://clubelo.com/API).
+
+
+**Initial feature list:**
+
+|                |                                |               |
+|----------------|--------------------------------|---------------|
+|Goals           |Total Shots                     |Attacks (Middle)|
+|Saves           |Shots on Target                 |Attacks (Left) |
+|Penalties       |Shots on Target from Free Kicks |Attacks (Right)|
+|Fouls           |Shots off Target                |Fast Breaks    |
+|Red Cards       |Shots off Target from Free Kicks|Crosses        |
+|Yellow Cards    |Shots from within the Box       |Long Balls     |
+|Key Passes      |Shots on Target from Set Pieces |Possession     |
+|Completed Passes|Shots off Target from Set Pieces|Corners        |
+|Passing Accuracy|Scoring Chances                 |Offsides       |
+
+
+
+#### A Note on Expected goals
+
+[Expected Goals](https://wikieducator.org/Sport_Informatics_and_Analytics/Performance_Monitoring/Expected_Goals) (_xG_) are not included in this analysis. xG measures the quality of goalscoring chances and the likelihood of them being scored. Factors influencing the probability of a goal being scored from a shot include distance from the goal; angle from the goal; and whether or not the player taking the shot was at least 1 m away from the nearest defender. Although very popular, I have not included these stats in the analysis but may do so later from a site like [understat](https://understat.com/)
+
+****
+
+### 3. Processing the Data
+
+In its raw form the observations gathered are grouped by match, with stats for both the home and away teams. Below is an example of the top five records.
+
+```{r, echo=F}
+knitr::kable(df_raw[1:5,])
+
+```
+
+
+From this raw form the data has been processed in the following ways:
+
+
+#### Replacing data with lagged averages 
+All the stats collected (with the exception of Elo), have been replaced with lagged averages. The rationale for this is that we need historical performance data to try and predict future match outcomes.
+
+#### Data regrouped by team
+The full set of records is broken up by teams so that there exist +20 datasets. One for each individual team with lagged average stats on their and their opponents performance.
+
+#### Splitting data 
+From the five season in the dataset, seasons 2015-16, 2016-17, and 2017-18 are used for training, the 2018-19 season will searve as the validation set, and the 2019-20 season will serve as the holdout data.
+
+As the matches occur in chronological order, each dataset will be broken apart in such a way that the model will be built on the first _n_ observations and tested on the _n+1_ match. This is accomplished using the _time_slice()_ function in the **caret** package. A visual representation of this partition can be seen below in the bottom left quadrant. In the example below, there is a time series with 20 data points. We can fix initialWindow = 5 and look at different settings of the other two arguments. In the plot below, rows in each panel correspond to different data splits (i.e. resamples) and the columns correspond to different data points. Also, red indicates samples that are in included in the training set and the blue indicates samples in the test set. See more [here](http://topepo.github.io/caret/data-splitting.html#data-splitting-for-time-series).
+
+![](/assets/images/Split_time-1.svg)
+
+
+
+
+****
+
+### 4. Feature Engineering
+
+Before starting any modeling, there are some data process and feature engineering steps to take on:
+
+#### Feature selection with Random Forest
+
+There are a lot of variables collected in the match report that are likely not predictive of a matches outcome. To remove those from the dataset, a random forest is used to determine which variables are relatively unimportant. Ultimately, I drop information about penalties, free kick shots off target, shots on target from free kicks, and information about shots taken from set pieces.
+
+In contrast, it appears that the number of shots within the penalty box, total shots on target, and overall numbers of attacks are the most predictive of match outcome.  
+
+
+```{r Feature Selection using Random Forest, echo=FALSE, warning=FALSE,message=FALSE}
+
+# Variable Importance Plot
+raw_to_filter <- df_raw %>% 
+  select(-season,-round,-goals_h,-goals_a,-Team_h,-Team_a,-match_id,-match_date)
+
+Filter_Forest <- randomForest(outcome ~ ., data=raw_to_filter)
+# importance(Filter_Forest)
+varImpPlot(Filter_Forest,
+           main = "Feature Importance in Predicting Match Outcome",n.var = ncol(raw_to_filter))
+
+Variables_To_Drop <- c("pen_h","pen_a","shot_off_fk_a","shot_off_fk_h",
+                       "shot_on_fk_h","shot_on_fk_a","shots_sp_on_h","shots_sp_on_a",
+                       "shots_sp_off_h","shots_sp_off_a")
+
+# removing 'unimportant' variables, drops from 14 features
+df_raw <- df_raw %>% select(-Variables_To_Drop)
+```
+
+#### Feature Extraction with PCA
+
+Even after removing 10 features from the dataset, there are still a large number of predictors for each match's outcome. To reduce the number of features while maximizing the amount of variation still explained, principal components analysis was applied as a [pre-processing technique](https://topepo.github.io/caret/pre-processing.html#transforming-predictors) in caret.
+
+
+```{r, eval=FALSE, echo=FALSE}
+raw_to_pca <- df_raw %>% 
+  select(-season,-round,-goals_h,-goals_a,-Team_h,-Team_a,-match_id,-match_date,-outcome)
+
+```
+
+****
+
+
+### 5. Distribution of Outcomes by Team
+
+It's worthwhile to point out that the distribution of outcomes is naturally different by team. Dominant teams like Juventus, Napoli, Roma, and Inter Milan all have win percentages over 50%. This class imbalance has consequences for the models built. However, for the example below, we'll focus on Sampdoria which has a relatively balanced distribution of outcomes for seasons 2015-16 - 2018-19: 34.8% Win, 23.6%, Loss 41.4%.
+
+```{r outcome_viz,message=FALSE,warning=FALSE,error=FALSE,echo=FALSE}
+
+load(file="00 Data/Team_split_Data.rdata")
+
+outcomes <- data.frame(team=NA,D=NA,L=NA,W=NA)
+
+for(i in 1:length(final_data)){
+    tmp <- final_data[[i]] %>% filter(!season=="2019-20")
+    
+    if (nrow(tmp)==0) {
+      next
+      }
+    
+    tmp_name <- tmp$Team %>% unique() %>% as.character()
+    
+    outcomes[i,1] <- tmp_name
+    
+    out<-as.vector(table(tmp$outcome)/nrow(tmp))
+    
+    outcomes[i,2] <- out[1]
+    outcomes[i,3] <- out[2]
+    outcomes[i,4] <- out[3]
+}
+
+outcome_viz <- outcomes %>% gather("Outcome","Prop",2:4)
+
+
+# Order of teams 
+ordered_by_W <- outcome_viz %>% filter(Outcome=="W") %>% arrange(-Prop) %>% select(team) %>% as.vector()
+
+outcome_viz$team <- factor(outcome_viz$team,levels = ordered_by_W$team)
+outcome_viz$Outcome <- factor(outcome_viz$Outcome,levels = c("W","D","L"))
+
+p <- ggplot(outcome_viz, aes(x=Outcome, y=Prop, fill=Outcome)) +
+  geom_bar(stat="identity", width=1,colour="grey") +
+  facet_wrap(facets = "team",nrow = 8) + 
+  theme_minimal() + # remove background, grid, numeric labels
+  scale_fill_manual(values=c("#008c45","#f4f5f0", "#cd212a"),labels=c("Win","Draw","Loss")) +
+  xlab("") + ylab("") + ggtitle("Match Outcome Distribution by Team") +
+  theme(legend.position="bottom",plot.title = element_text(hjust = 0.5)) +
+  labs(caption = "Outcomes for seasons 2015-16 - 2018-19")
+  
+p
+
+
+```
+
+
+### 6. Illustrative Example with U.C Sampdoria
+
+The records for Sampdoria have been broken apart into three datasets: `Samp_train` with records from the "2015-16","2016-17","2017-18" seasons, `Samp_validation` with records from the "2018-19" season, and `Samp_holdout` from the '2019-20` season. Each dataset has been scrubbed of the first three records from each season as they do not have lagged average values for the various features.
+
+Various models will be trained on the `Samp_train` set, their parameters tested and tuned on `Samp_validation`, and all will be tested individually and in an ensemble on the `Samp_holdout` set.
+
+
+```{r Sampdoria, echo=TRUE}
+
+# Partitioning Sampdoria Data
+
+Samp <- final_data[[17]]
+
+Samp <- Samp[complete.cases(Samp), ]
+
+#Samp$outcome <- ifelse(Samp$outcome=="D","D","ND")
+
+Samp_train <- Samp %>% 
+  filter(season%in%c("2015-16","2016-17","2017-18")) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) %>%
+  as.data.frame() # 105 records 
+
+Samp_validation <- Samp %>% 
+  filter(season%in%c("2018-19")) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) # 35 records
+
+Samp_holdout <- Samp %>% 
+  filter(season%in%c("2019-20")) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) # 21 records
+
+```
+
+
+
+#### Multinomial Logistic Regression
+
+
+
+```{r Multinomial Regression, echo=FALSE, message=FALSE,warning=FALSE}
+
+myTimeControl <- trainControl(method = "timeslice",
+                              initialWindow = 10,
+                              horizon = 1,
+                              fixedWindow = FALSE,
+                              allowParallel = TRUE)
+
+samp_mult_log = train(
+  outcome ~ .,
+  data = Samp_train,
+  method = "multinom",
+  preProc = c("pca"),
+  trControl = myTimeControl,
+  trace=FALSE
+) 
+
+Predictions1 <- predict(samp_mult_log,Samp_validation)
+confusionMatrix(Predictions1, as.factor(Samp_validation$outcome),mode = "prec_recall")
+
+
+Predictions1_p <- predict(samp_mult_log,Samp_validation,type = "prob")
+Predictions1_p <- round(Predictions1_p,5)
+
+Predictions1_p <- cbind(Predictions1_p,Predictions1,Samp_validation$outcome)
+names(Predictions1_p) <- c("D","L","W","Predicted","Actual")
+
+Predictions1_p <- Predictions1_p %>% 
+  mutate(Correct=ifelse(Predictions1_p$Predicted==Predictions1_p$Actual,1,0)) %>%
+  mutate(Cum_Correct=cummean(Correct)) %>%
+  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
+  mutate(Round=4:38)
+
+
+ggplot(Predictions1_p) +
+  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
+  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
+  xlab("Round") + ylab("Accuracy Rate") + 
+  ggtitle("Validation Dataset Accuracy of Multinomial Logistic Regression") +
+  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
+  theme_minimal() +
+  ylim(0,1)
+
+
+
+
+
+```
+
+
+#### SVM
+
+```{r SVM, echo=FALSE,message=FALSE,warning=FALSE}
+
+samp_svm = train(
+  outcome ~ .,
+  data = Samp_train,
+  method = "svmLinear",
+  preProc = c("pca"),
+  trControl = myTimeControl
+) 
+
+Predictions2 <- predict(samp_svm,Samp_validation)
+confusionMatrix(Predictions2, as.factor(Samp_validation$outcome),mode = "prec_recall")
+
+#Predictions2_p <- predict(samp_svm,Samp_validation,type = "prob")
+#Predictions2_p <- round(Predictions1_p,5)
+
+Predictions2_p <- cbind(as.character(Predictions2),as.character(Samp_validation$outcome)) %>% as.data.frame()
+names(Predictions2_p) <- c("Predicted","Actual")
+
+
+Predictions2_p <- Predictions2_p %>% 
+  mutate(Correct=ifelse(Predictions2_p$Predicted==Predictions2_p$Actual,1,0)) %>%
+  mutate(Cum_Correct=cummean(Correct)) %>%
+  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
+  mutate(Round=4:38)
+
+
+ggplot(Predictions2_p) +
+  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
+  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
+  xlab("Round") + ylab("Accuracy Rate") + 
+  ggtitle("Validation Dataset Accuracy of Support Vector Machine Model") +
+  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
+  theme_minimal() +
+  ylim(0,1)
+
+
+```
+
+
+#### Random Forest
+
+```{r RandomForest, echo=FALSE,message=FALSE,warning=FALSE}
+
+samp_rf = train(
+  outcome ~ .,
+  data = Samp_train,
+  method = "rf",
+  preProc = c("pca"),
+  trControl = myTimeControl
+) 
+
+Predictions3 <- predict(samp_rf,Samp_validation)
+confusionMatrix(Predictions3, as.factor(Samp_validation$outcome),mode = "prec_recall")
+
+Predictions3_p <- predict(samp_rf,Samp_validation,type = "prob")
+Predictions3_p <- round(Predictions3_p,5)
+
+Predictions3_p <- cbind(Predictions3_p,Predictions3,Samp_validation$outcome) %>% as.data.frame()
+names(Predictions3_p) <- c("D","L","W","Predicted","Actual")
+
+Predictions3_p <- Predictions3_p %>% 
+  mutate(Correct=ifelse(Predictions3_p$Predicted==Predictions3_p$Actual,1,0)) %>%
+  mutate(Cum_Correct=cummean(Correct)) %>%
+  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
+  mutate(Round=4:38)
+
+ggplot(Predictions3_p) +
+  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
+  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
+  xlab("Round") + ylab("Accuracy Rate") + 
+  ggtitle("Validation Dataset Accuracy of Random Forest Model") +
+  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
+  theme_minimal() +
+  ylim(0,1)
+```
+
+
+#### Naive-Bayes
+
+```{r Naive-Bayes, echo=FALSE,message=FALSE,warning=FALSE}
+
+samp_nb = train(
+  outcome ~ .,
+  data = Samp_train,
+  method = "naive_bayes",
+  preProc = c("pca"),
+  trControl = myTimeControl
+) 
+
+Predictions4 <- predict(samp_nb,Samp_validation)
+confusionMatrix(Predictions4, as.factor(Samp_validation$outcome),mode = "prec_recall")
+
+
+
+Predictions4_p <- predict(samp_nb,Samp_validation,type = "prob")
+Predictions4_p <- round(Predictions4_p,5)
+
+Predictions4_p <- cbind(Predictions4_p,Predictions4,Samp_validation$outcome) %>% as.data.frame()
+names(Predictions4_p) <- c("D","L","W","Predicted","Actual")
+
+
+Predictions4_p <- Predictions4_p %>% 
+  mutate(Correct=ifelse(Predictions4_p$Predicted==Predictions4_p$Actual,1,0)) %>%
+  mutate(Cum_Correct=cummean(Correct)) %>%
+  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
+  mutate(Round=4:38)
+
+
+ggplot(Predictions4_p) +
+  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
+  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
+  xlab("Round") + ylab("Accuracy Rate") + 
+  ggtitle("Validation Dataset Accuracy of Naive Bayes Model") +
+  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
+  theme_minimal() +
+  ylim(0,1)
+
+
+```
+
+#### Ensemble
+
+
+
+#### Results
+
+
+
+****
+
+### 7. Overall Results
+
+
+### 8. Conclusion and Next Steps
+
+  - Include xG data
+
+  - Find a way to account for class imbalance
+
+  - Add player-level data
+
+  - Try a generalizable model
