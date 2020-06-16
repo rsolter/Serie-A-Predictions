@@ -1,6 +1,127 @@
+### 1. Objective
+
+The goal of this post is to try and predict the outcome of soccer
+matches in the Italian top-flight division, *Serie A*. There are three
+possible outcomes for each match: a home win, an away win, or a draw. To
+make things more interesting, the predicted outcomes and their
+associated probabilities will be compared to historical odds offered by
+bookmakers in Europe which were gathered from
+<https://www.football-data.co.uk>.
+
+As an example, the odds given for a single match between Parma and
+Juventus in August, 2019 are listed below along with those same odds
+converted to probabilities. These odds were offered by the company
+Bet365.
+
+<table>
+<caption>
+Example Odds from Bet365
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Date
+</th>
+<th style="text-align:left;">
+HomeTeam
+</th>
+<th style="text-align:left;">
+AwayTeam
+</th>
+<th style="text-align:right;">
+B365H
+</th>
+<th style="text-align:right;">
+B365A
+</th>
+<th style="text-align:right;">
+B365D
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+24/08/2019
+</td>
+<td style="text-align:left;">
+Parma
+</td>
+<td style="text-align:left;">
+Juventus
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+1.33
+</td>
+<td style="text-align:right;">
+5.25
+</td>
+</tr>
+</tbody>
+</table>
+<table>
+<caption>
+Converted to Probabilities
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Date
+</th>
+<th style="text-align:left;">
+HomeTeam
+</th>
+<th style="text-align:left;">
+AwayTeam
+</th>
+<th style="text-align:right;">
+B365H
+</th>
+<th style="text-align:right;">
+B365A
+</th>
+<th style="text-align:right;">
+B365D
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+24/08/2019
+</td>
+<td style="text-align:left;">
+Parma
+</td>
+<td style="text-align:left;">
+Juventus
+</td>
+<td style="text-align:right;">
+0.1111111
+</td>
+<td style="text-align:right;">
+0.7518797
+</td>
+<td style="text-align:right;">
+0.1904762
+</td>
+</tr>
+</tbody>
+</table>
+Note that the sum of the three probabilities is equal to 1.0534, so the
+odds offered by Bet365 are not true odds. This practice is standard
+among all odds offered by bookmakers. The ‘extra’ 5.34% is known as “the
+vig” and helps bookmakers ensure a profit across all the matches on
+which they’re offering odds. Wikipedia has a better explanation of how
+the vig plays out
+[here](https://en.wikipedia.org/wiki/Vigorish#The_simplest_wager).
+
 ------------------------------------------------------------------------
 
-### 1. Gathering Data
+### 2. Gathering Data
 
 The data for this project was gathered from the official [Serie A
 website](http://www.legaseriea.it/en) and its match reports from the
@@ -41,7 +162,7 @@ but may do so later from a site like [understat](https://understat.com/)
 
 ------------------------------------------------------------------------
 
-### 2. Processing the Data
+### 3. Processing the Data
 
 In its raw form the observations gathered are grouped by match, with
 stats for both the home and away teams. Below is an example of the top
@@ -913,7 +1034,7 @@ the test set. See more
 
 ------------------------------------------------------------------------
 
-### 3. Feature Engineering
+### 4. Feature Engineering
 
 Before starting any modeling, there are some data process and feature
 engineering steps to take on:
@@ -945,7 +1066,7 @@ in caret.
 
 ------------------------------------------------------------------------
 
-### 3. Distribution of Outcomes by Team
+### 5. Distribution of Outcomes by Team
 
 It’s worthwhile to point out that the distribution of outcomes is
 naturally different by team. Dominant teams like Juventus, Napoli, Roma,
@@ -956,7 +1077,7 @@ outcomes for seasons 2015-16 - 2018-19: 34.8% Win, 23.6%, Loss 41.4%.
 
 ![](SerieA_Blog_Post_files/figure-markdown_github/outcome_viz-1.png)
 
-### 4. Illustrative Example with U.C Sampdoria
+### 6. Illustrative Example with U.C Sampdoria
 
 The records for Sampdoria have been broken apart into three datasets:
 `Samp_train` with records from the “2015-16”,“2016-17”,“2017-18”
@@ -973,21 +1094,34 @@ individually and in an ensemble on the `Samp_holdout` set.
 # Partitioning Sampdoria Data
 
 Samp <- final_data[[17]]
+dim(Samp)
+```
 
+    ## [1] 176  42
+
+``` r
+# removing First three records for each season 
 Samp <- Samp[complete.cases(Samp), ]
+dim(Samp)
+```
+
+    ## [1] 161  42
+
+``` r
+#Samp$outcome <- ifelse(Samp$outcome=="D","D","ND")
 
 Samp_train <- Samp %>% 
   filter(season%in%c("2015-16","2016-17","2017-18")) %>%
-  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) %>%
   as.data.frame() # 105 records 
 
 Samp_validation <- Samp %>% 
   filter(season%in%c("2018-19")) %>%
-  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) # 35 records
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 35 records
 
 Samp_holdout <- Samp %>% 
   filter(season%in%c("2019-20")) %>%
-  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) # 21 records
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 21 records
 ```
 
 #### Multinomial Logistic Regression
@@ -1064,31 +1198,31 @@ Samp_holdout <- Samp %>%
     ## 
     ##           Reference
     ## Prediction  D  L  W
-    ##          D  0  0  0
-    ##          L  2  4  0
-    ##          W  6 10 13
+    ##          D  3  2  5
+    ##          L  5 12  8
+    ##          W  0  0  0
     ## 
     ## Overall Statistics
     ##                                           
-    ##                Accuracy : 0.4857          
-    ##                  95% CI : (0.3138, 0.6601)
+    ##                Accuracy : 0.4286          
+    ##                  95% CI : (0.2632, 0.6065)
     ##     No Information Rate : 0.4             
-    ##     P-Value [Acc > NIR] : 0.1934835       
+    ##     P-Value [Acc > NIR] : 0.427246        
     ##                                           
-    ##                   Kappa : 0.1754          
+    ##                   Kappa : 0.1195          
     ##                                           
-    ##  Mcnemar's Test P-Value : 0.0004398       
+    ##  Mcnemar's Test P-Value : 0.002541        
     ## 
     ## Statistics by Class:
     ## 
     ##                      Class: D Class: L Class: W
-    ## Precision                  NA   0.6667   0.4483
-    ## Recall                 0.0000   0.2857   1.0000
-    ## F1                         NA   0.4000   0.6190
-    ## Prevalence             0.2286   0.4000   0.3714
-    ## Detection Rate         0.0000   0.1143   0.3714
-    ## Detection Prevalence   0.0000   0.1714   0.8286
-    ## Balanced Accuracy      0.5000   0.5952   0.6364
+    ## Precision             0.30000   0.4800       NA
+    ## Recall                0.37500   0.8571   0.0000
+    ## F1                    0.33333   0.6154       NA
+    ## Prevalence            0.22857   0.4000   0.3714
+    ## Detection Rate        0.08571   0.3429   0.0000
+    ## Detection Prevalence  0.28571   0.7143   0.0000
+    ## Balanced Accuracy     0.55787   0.6190   0.5000
 
 ![](SerieA_Blog_Post_files/figure-markdown_github/RandomForest-1.png)
 
@@ -1132,14 +1266,36 @@ Samp_holdout <- Samp %>%
 
 ------------------------------------------------------------------------
 
-### 5. Overall Results
+### 7. Betting on Draws
 
-### 6. Conclusion and Next Steps
+Soccer is different from every other popular sport in that it allows for
+draws. For the casual sports fan who is drawn to watching sports to see
+two teams compete and a winner declared, this can seem incredibly
+boring.
 
--   Include xG data
+This mentality is reflected in the odds offered by odds makers who
+consistently offer slightly better odds on draws, because casual punters
+are more likely to bet on one of the two teams winning. This is
+reflected in the historical odds data for Serie A. Draws have a minimum
+odds of 2.4, over twice the minimum of either home or away outcomes.
+
+![](SerieA_Blog_Post_files/figure-markdown_github/Betting%20on%20Draws-1.png)
+
+Given the higher payout of draws on average, it may make sense to
+re-cast the multi-nomial classification problem (Win, Loss, Draw) to a
+binomial classification problem with a focus on identifying draws
+(identifying non-draws wouldn’t be helpful for betting purposes).
+
+------------------------------------------------------------------------
+
+### 7. Overall Results
+
+------------------------------------------------------------------------
+
+### 8. Conclusion and Next Steps
+
+-   Gather more data: xG, player-level data, etc.
 
     -   Find a way to account for class imbalance
 
-    -   Add player-level data
-
-    -   Try a generalizable model
+    -   Investigate other modeling approaches

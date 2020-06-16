@@ -15,6 +15,7 @@ library(tidyverse)
 library(kableExtra)
 library(caret)
 library(e1071)
+library(knitr)
 
 load(file="00 Data/full_raw_scraped.rdata")
 load(file="00 Data/italy_elos.rdata")
@@ -22,7 +23,31 @@ italy_elos$Club <- as.factor(italy_elos$Club)
 ```
 
 
-### 1. Objective and Background
+### 1. Objective
+
+The goal of this post is to try and predict the outcome of soccer matches in the Italian top-flight division, _Serie A_. There are three possible outcomes for each match: a home win, an away win, or a draw. To make things more interesting, the predicted outcomes and their associated probabilities will be compared to historical odds offered by bookmakers in Europe which were gathered from  [https://www.football-data.co.uk](https://www.football-data.co.uk). 
+
+As an example, the odds given for a single match between Parma and Juventus in August, 2019 are listed below along with those same odds converted to probabilities. These odds were offered by the company Bet365.
+
+```{r Betting Odds, echo=FALSE}
+
+raw_bet <- data.frame(Date="24/08/2019",HomeTeam="Parma",
+                      AwayTeam="Juventus",B365H=9,
+                      B365A=1.33, B365D=5.25)
+
+kable(raw_bet, caption="Example Odds from Bet365")
+
+bet_prob <- raw_bet %>% 
+  mutate(B365H=1/B365H,
+         B365A=1/B365A,
+         B365D=1/B365D)
+
+kable(bet_prob, caption = "Converted to Probabilities")
+
+```
+
+
+Note that the sum of the three probabilities is equal to 1.0534, so the odds offered by Bet365 are not true odds. This practice is standard among all odds offered by bookmakers. The 'extra' 5.34% is known as "the vig" and helps bookmakers ensure a profit across all the matches on which they're offering odds. Wikipedia has a better explanation of how the vig plays out [here](https://en.wikipedia.org/wiki/Vigorish#The_simplest_wager).
 
 
 
@@ -194,23 +219,26 @@ Various models will be trained on the `Samp_train` set, their parameters tested 
 # Partitioning Sampdoria Data
 
 Samp <- final_data[[17]]
+dim(Samp)
 
+# removing First three records for each season 
 Samp <- Samp[complete.cases(Samp), ]
+dim(Samp)
 
 #Samp$outcome <- ifelse(Samp$outcome=="D","D","ND")
 
 Samp_train <- Samp %>% 
   filter(season%in%c("2015-16","2016-17","2017-18")) %>%
-  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) %>%
   as.data.frame() # 105 records 
 
 Samp_validation <- Samp %>% 
   filter(season%in%c("2018-19")) %>%
-  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) # 35 records
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 35 records
 
 Samp_holdout <- Samp %>% 
   filter(season%in%c("2019-20")) %>%
-  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained)) # 21 records
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 21 records
 
 ```
 
@@ -395,9 +423,45 @@ ggplot(Predictions4_p) +
 
 #### Ensemble
 
-
-
 #### Results
+
+
+
+****
+
+
+### 7. Betting on Draws 
+
+Soccer is different from every other popular sport in that it allows for draws. For the casual sports fan who is drawn to watching sports to see two teams compete and a winner declared, this can seem incredibly boring. 
+
+This mentality is reflected in the odds offered by odds makers who consistently offer slightly better odds on draws, because casual punters are more likely to bet on one of the two teams winning. This is reflected in the historical odds data for Serie A. Draws have a minimum odds of 2.4, over twice the minimum of either home or away outcomes. 
+
+```{r Betting on Draws, echo=FALSE,warning=FALSE,message=FALSE}
+
+load(file="00 Data/betting_raw.rdata")
+
+long_betting <- betting_raw_out %>% gather("Outcome","Odds",4:6) %>% filter(!is.na(HomeTeam))
+
+means <- long_betting %>% group_by(Outcome) %>% summarise(Odds=mean(Odds,na.rm=T))
+sds <- long_betting %>% group_by(Outcome) %>% summarise(sd=sd(Odds,na.rm=T))
+mins <- long_betting %>% group_by(Outcome) %>% summarise(min=min(Odds,na.rm=T))
+
+g <- ggplot(long_betting,aes(x=Odds, group=Outcome))+
+  geom_boxplot(aes(color=Outcome)) + coord_flip() +
+  theme(legend.position = "bottom") + theme_minimal() +
+  scale_colour_manual(values=c("#008c45","#636363", "#cd212a")) +
+  xlab("") + ylab("Odds") + ggtitle("B365 Odds by Outcome") +
+  theme(legend.position="bottom",plot.title = element_text(hjust = 0.5)) +
+  labs(caption = "For seasons 2015-16 - 2019-20") 
+ 
+g + geom_text(aes(y = -0.3,x=25, label="Mean = 4.86 \n SD = 4.03 \n Min = 1.16")) + 
+  geom_text(aes(y = -0.0,x=25, label="Mean = 4.06 \n SD = 1.19 \n Min = 2.4")) + 
+  geom_text(aes(y = 0.3,x=25, label="Mean = 2.86 \n SD = 2.06 \n Min = 1.06"))
+
+
+```
+
+Given the higher payout of draws on average, it may make sense to re-cast the multi-nomial classification problem (Win, Loss, Draw) to a binomial classification problem with a focus on identifying draws (identifying non-draws wouldn't be helpful for betting purposes).
 
 
 
@@ -406,12 +470,13 @@ ggplot(Predictions4_p) +
 ### 7. Overall Results
 
 
+
+****
+
 ### 8. Conclusion and Next Steps
 
-  - Include xG data
+  - Gather more data: xG, player-level data, etc.
 
   - Find a way to account for class imbalance
 
-  - Add player-level data
-
-  - Try a generalizable model
+  - Investigate other modeling approaches 

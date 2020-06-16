@@ -172,7 +172,10 @@ for(k in 1:length(team_dfs)){
 }
 
 
-### Re-creating and joining opposition data ----
+### Re-creating and joining opposition data and betting data----
+
+load(file="00 Data/betting_probabilities.rdata")
+
 
 master_trailing <- bind_rows(team_trailing) %>% as.data.frame() %>% arrange(match_id)
 last <- ncol(master_trailing)
@@ -223,8 +226,14 @@ for (f in 1:length(teams)){
   final_records$home_match <- as.factor(final_records$home_match)
   final_records$outcome <- as.factor(final_records$outcome)
   
+  # Adding in betting odds
+  team_probs <- team_betting_probs %>% filter(Team==tmp_team) %>% select(Team,Opp,B365_team,B365_opp,B365D,home_match,season) 
+  team_probs$home_match <- as.factor(team_probs$home_match)
+  
+  final_records2 <- left_join(final_records,team_probs,by=c("Team"="Team","Opp"="Opp","home_match"="home_match","season"="season"))
+  
     
-  final_data[[f]] <- final_records
+  final_data[[f]] <- final_records2
   
 }
 
