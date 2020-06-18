@@ -14,8 +14,10 @@ library(randomForest)
 library(tidyverse)
 library(kableExtra)
 library(caret)
+library(caretEnsemble)
 library(e1071)
 library(knitr)
+library(pROC)
 
 load(file="00 Data/full_raw_scraped.rdata")
 load(file="00 Data/italy_elos.rdata")
@@ -48,7 +50,6 @@ kable(bet_prob, caption = "Converted to Probabilities")
 
 
 Note that the sum of the three probabilities is equal to 1.0534, so the odds offered by Bet365 are not true odds. This practice is standard among all odds offered by bookmakers. The 'extra' 5.34% is known as "the vig" and helps bookmakers ensure a profit across all the matches on which they're offering odds. Wikipedia has a better explanation of how the vig plays out [here](https://en.wikipedia.org/wiki/Vigorish#The_simplest_wager).
-
 
 
 ****
@@ -207,38 +208,40 @@ p
 ```
 
 
+
 ### 6. Illustrative Example with U.C Sampdoria
 
-The records for Sampdoria have been broken apart into three datasets: `Samp_train` with records from the "2015-16","2016-17","2017-18" seasons, `Samp_validation` with records from the "2018-19" season, and `Samp_holdout` from the '2019-20` season. Each dataset has been scrubbed of the first three records from each season as they do not have lagged average values for the various features.
-
-Various models will be trained on the `Samp_train` set, their parameters tested and tuned on `Samp_validation`, and all will be tested individually and in an ensemble on the `Samp_holdout` set.
+The records for Sampdoria have been broken apart into two datasets: `Samp_train` with records from the "2015-16","2016-17","2017-18", and "2018-19" seasons and  `Samp_test` which has records from the '2019-20` season. Each dataset has been scrubbed of the first three records from each season as they do not have lagged average values for the various features. Various models will be trained on the `Samp_train` set and then tested individually and in an ensemble on the `Samp_holdout` set.
 
 
-```{r Sampdoria, echo=TRUE}
+```{r Sampdoria, echo=FALSE}
 
 # Partitioning Sampdoria Data
-
 Samp <- final_data[[17]]
-dim(Samp)
 
 # removing First three records for each season 
 Samp <- Samp[complete.cases(Samp), ]
-dim(Samp)
-
-#Samp$outcome <- ifelse(Samp$outcome=="D","D","ND")
 
 Samp_train <- Samp %>% 
-  filter(season%in%c("2015-16","2016-17","2017-18")) %>%
+  filter(season%in%c("2015-16","2016-17","2017-18","2018-19")) %>%
   select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) %>%
-  as.data.frame() # 105 records 
+  as.data.frame() # 140 records 
 
-Samp_validation <- Samp %>% 
-  filter(season%in%c("2018-19")) %>%
-  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 35 records
-
-Samp_holdout <- Samp %>% 
+Samp_test <- Samp %>% 
   filter(season%in%c("2019-20")) %>%
   select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 21 records
+
+
+# Some useful links
+  # https://stats.stackexchange.com/questions/287569/do-i-need-a-test-set-when-using-time-series-cross-validation
+  # https://machinelearningmastery.com/machine-learning-evaluation-metrics-in-r/
+  # https://stackoverflow.com/questions/59669490/error-with-caret-and-summaryfunction-mnlogloss-columns-consistent-with-lev
+  # https://www.kaggle.com/chrisbow/breast-cancer-prediction-using-the-caret-package/notebook
+  # https://www.kaggle.com/rtatman/picking-the-best-model-with-caret
+  # https://www.kaggle.com/rtatman/machine-learning-with-xgboost-in-r#What-is-XGBoost?
+  # https://towardsdatascience.com/machine-learning-multiclass-classification-with-imbalanced-data-set-29f6a177c1a
+  # https://machinelearningmastery.com/tactics-to-combat-imbalanced-classes-in-your-machine-learning-dataset/
+
 
 ```
 
@@ -246,54 +249,67 @@ Samp_holdout <- Samp %>%
 
 #### Multinomial Logistic Regression
 
+Tuning parameters: 
+
+_Weight Decay (decay, numeric)_
+
 
 
 ```{r Multinomial Regression, echo=FALSE, message=FALSE,warning=FALSE}
 
+# Setting up the training controls to make use of timeslice function
+  # may want to have the trainControl run through diferent lengths of initial windows and different number of components for PAC
 myTimeControl <- trainControl(method = "timeslice",
                               initialWindow = 10,
                               horizon = 1,
                               fixedWindow = FALSE,
-                              allowParallel = TRUE)
+                              allowParallel = TRUE,summaryFunction = mnLogLoss,classProbs = TRUE)
+                              #,preProcOptions = )
 
+# Training multinomial model
+set.seed(555)
 samp_mult_log = train(
   outcome ~ .,
   data = Samp_train,
   method = "multinom",
   preProc = c("pca"),
   trControl = myTimeControl,
+  metric="logLoss",
   trace=FALSE
-) 
+)
 
-Predictions1 <- predict(samp_mult_log,Samp_validation)
-confusionMatrix(Predictions1, as.factor(Samp_validation$outcome),mode = "prec_recall")
+mult_log_pred <- predict(samp_mult_log,Samp_test)
+confusionMatrix(mult_log_pred, as.factor(Samp_test$outcome),mode = "prec_recall")
 
+mult_log_pred_prob <- predict(samp_mult_log,Samp_test,type="prob")
 
-Predictions1_p <- predict(samp_mult_log,Samp_validation,type = "prob")
-Predictions1_p <- round(Predictions1_p,5)
+mult_log_pred_out <- cbind(mult_log_pred_prob,Samp_test$outcome,mult_log_pred) %>% as.data.frame()
+names(mult_log_pred_out) <- c("D","L","W","Actual","Pred")
+mult_log_pred_out %>% 
+  mutate(Accuracy=ifelse(Actual==Pred,1,0)) %>% 
+  select(Actual,Pred,Accuracy,D,L,W)
 
-Predictions1_p <- cbind(Predictions1_p,Predictions1,Samp_validation$outcome)
-names(Predictions1_p) <- c("D","L","W","Predicted","Actual")
+#Predictions1_p <- predict(samp_mult_log,Samp_test,type = "prob")
+#Predictions1_p <- round(Predictions1_p,5)
 
-Predictions1_p <- Predictions1_p %>% 
-  mutate(Correct=ifelse(Predictions1_p$Predicted==Predictions1_p$Actual,1,0)) %>%
-  mutate(Cum_Correct=cummean(Correct)) %>%
-  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
-  mutate(Round=4:38)
+#Predictions1_p <- cbind(Predictions1_p,Predictions1,Samp_test$outcome)
+#names(Predictions1_p) <- c("D","L","W","Predicted","Actual")
 
-
-ggplot(Predictions1_p) +
-  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
-  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
-  xlab("Round") + ylab("Accuracy Rate") + 
-  ggtitle("Validation Dataset Accuracy of Multinomial Logistic Regression") +
-  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
-  theme_minimal() +
-  ylim(0,1)
+#Predictions1_p <- Predictions1_p %>% 
+#  mutate(Correct=ifelse(Predictions1_p$Predicted==Predictions1_p$Actual,1,0)) %>%
+#  mutate(Cum_Correct=cummean(Correct)) %>%
+#  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
+#  mutate(Round=4:38)
 
 
-
-
+#ggplot(Predictions1_p) +
+#  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
+#  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
+#  xlab("Round") + ylab("Accuracy Rate") + 
+#  ggtitle("Validation Dataset Accuracy of Multinomial Logistic Regression") +
+#  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
+#  theme_minimal() +
+#  ylim(0,1)
 
 ```
 
@@ -307,16 +323,18 @@ samp_svm = train(
   data = Samp_train,
   method = "svmLinear",
   preProc = c("pca"),
-  trControl = myTimeControl
+  trControl = myTimeControl,
+  metric="logLoss",
+
 ) 
 
-Predictions2 <- predict(samp_svm,Samp_validation)
-confusionMatrix(Predictions2, as.factor(Samp_validation$outcome),mode = "prec_recall")
+Predictions3 <- predict(samp_svm,Samp_test)
+confusionMatrix(Predictions2, as.factor(Samp_test$outcome),mode = "prec_recall")
 
-#Predictions2_p <- predict(samp_svm,Samp_validation,type = "prob")
+#Predictions2_p <- predict(samp_svm,Samp_test,type = "prob")
 #Predictions2_p <- round(Predictions1_p,5)
 
-Predictions2_p <- cbind(as.character(Predictions2),as.character(Samp_validation$outcome)) %>% as.data.frame()
+Predictions2_p <- cbind(as.character(Predictions2),as.character(Samp_test$outcome)) %>% as.data.frame()
 names(Predictions2_p) <- c("Predicted","Actual")
 
 
@@ -340,7 +358,18 @@ ggplot(Predictions2_p) +
 ```
 
 
-#### Random Forest
+#### Random Forest - Ranger
+
+
+Tuning parameters: 
+
+_Number of Randomly Selected Predictors (mtry, numeric)_
+
+_Splitting Rule (splitrule, character)_
+
+_Minimal Node Size (min.node.size, numeric)_
+
+
 
 ```{r RandomForest, echo=FALSE,message=FALSE,warning=FALSE}
 
@@ -352,13 +381,13 @@ samp_rf = train(
   trControl = myTimeControl
 ) 
 
-Predictions3 <- predict(samp_rf,Samp_validation)
-confusionMatrix(Predictions3, as.factor(Samp_validation$outcome),mode = "prec_recall")
+Predictions3 <- predict(samp_rf,Samp_test)
+confusionMatrix(Predictions3, as.factor(Samp_test$outcome),mode = "prec_recall")
 
-Predictions3_p <- predict(samp_rf,Samp_validation,type = "prob")
+Predictions3_p <- predict(samp_rf,Samp_test,type = "prob")
 Predictions3_p <- round(Predictions3_p,5)
 
-Predictions3_p <- cbind(Predictions3_p,Predictions3,Samp_validation$outcome) %>% as.data.frame()
+Predictions3_p <- cbind(Predictions3_p,Predictions3,Samp_test$outcome) %>% as.data.frame()
 names(Predictions3_p) <- c("D","L","W","Predicted","Actual")
 
 Predictions3_p <- Predictions3_p %>% 
@@ -378,6 +407,20 @@ ggplot(Predictions3_p) +
 ```
 
 
+```{r Ranger, echo=FALSE, message=FALSE,warning=FALSE}
+
+samp_ranger <- train(
+  outcome ~ .,
+  data=Samp_train,
+  method='ranger',
+  preProcess = c('pca'),
+  metric = "accuracy",
+  trControl = myTimeControl
+)
+
+```
+
+
 #### Naive-Bayes
 
 ```{r Naive-Bayes, echo=FALSE,message=FALSE,warning=FALSE}
@@ -390,15 +433,15 @@ samp_nb = train(
   trControl = myTimeControl
 ) 
 
-Predictions4 <- predict(samp_nb,Samp_validation)
-confusionMatrix(Predictions4, as.factor(Samp_validation$outcome),mode = "prec_recall")
+Predictions4 <- predict(samp_nb,Samp_test)
+confusionMatrix(Predictions4, as.factor(Samp_test$outcome),mode = "prec_recall")
 
 
 
-Predictions4_p <- predict(samp_nb,Samp_validation,type = "prob")
+Predictions4_p <- predict(samp_nb,Samp_test,type = "prob")
 Predictions4_p <- round(Predictions4_p,5)
 
-Predictions4_p <- cbind(Predictions4_p,Predictions4,Samp_validation$outcome) %>% as.data.frame()
+Predictions4_p <- cbind(Predictions4_p,Predictions4,Samp_test$outcome) %>% as.data.frame()
 names(Predictions4_p) <- c("D","L","W","Predicted","Actual")
 
 
@@ -423,6 +466,9 @@ ggplot(Predictions4_p) +
 
 #### Ensemble
 
+****
+
+
 #### Results
 
 
@@ -430,17 +476,17 @@ ggplot(Predictions4_p) +
 ****
 
 
-### 7. Betting on Draws 
+### 7. Considering Betting on Draws 
 
 Soccer is different from every other popular sport in that it allows for draws. For the casual sports fan who is drawn to watching sports to see two teams compete and a winner declared, this can seem incredibly boring. 
 
-This mentality is reflected in the odds offered by odds makers who consistently offer slightly better odds on draws, because casual punters are more likely to bet on one of the two teams winning. This is reflected in the historical odds data for Serie A. Draws have a minimum odds of 2.4, over twice the minimum of either home or away outcomes. 
+This mentality is reflected in the odds offered by odds makers who consistently offer slightly better odds on draws, because casual punters are more likely to bet on one of the two teams winning. This is reflected in the historical odds data for Serie A. Draws have a minimum odds of 2.4, over twice the minimum of either home or away outcomes. Average returns are highest for an away win (4.86), then a draw (4.06), and last a home win (2.86). This is unsurprisngly if we consider how home advantage affects matches.
 
 ```{r Betting on Draws, echo=FALSE,warning=FALSE,message=FALSE}
 
 load(file="00 Data/betting_raw.rdata")
 
-long_betting <- betting_raw_out %>% gather("Outcome","Odds",4:6) %>% filter(!is.na(HomeTeam))
+long_betting <- betting_raw_out %>% select(-result) %>% gather("Outcome","Odds",4:6) %>% filter(!is.na(HomeTeam))
 
 means <- long_betting %>% group_by(Outcome) %>% summarise(Odds=mean(Odds,na.rm=T))
 sds <- long_betting %>% group_by(Outcome) %>% summarise(sd=sd(Odds,na.rm=T))
@@ -452,17 +498,70 @@ g <- ggplot(long_betting,aes(x=Odds, group=Outcome))+
   scale_colour_manual(values=c("#008c45","#636363", "#cd212a")) +
   xlab("") + ylab("Odds") + ggtitle("B365 Odds by Outcome") +
   theme(legend.position="bottom",plot.title = element_text(hjust = 0.5)) +
-  labs(caption = "For seasons 2015-16 - 2019-20") 
+  labs(caption = "For seasons 2015-16 - 2019-20") + xlim(0,23)
  
-g + geom_text(aes(y = -0.3,x=25, label="Mean = 4.86 \n SD = 4.03 \n Min = 1.16")) + 
-  geom_text(aes(y = -0.0,x=25, label="Mean = 4.06 \n SD = 1.19 \n Min = 2.4")) + 
-  geom_text(aes(y = 0.3,x=25, label="Mean = 2.86 \n SD = 2.06 \n Min = 1.06"))
+g + geom_text(aes(y = -0.32,x=20, label="Mean = 4.86 \n SD = 4.03 \n Min = 1.16")) + 
+  geom_text(aes(y = -0.0,x=20, label="Mean = 4.06 \n SD = 1.19 \n Min = 2.4")) + 
+  geom_text(aes(y = 0.32,x=20, label="Mean = 2.86 \n SD = 2.06 \n Min = 1.06"))
 
 
 ```
 
+
+A similarly striking pattern on returns is observed when filtering for odds that actually paid out. The mean payout among draws is now higher than away wins and the minimum payout is greater than twice that of away or home wins. 
+
+```{r Betting on Draws 2, echo=FALSE,warning=FALSE,message=FALSE}
+# Pulling in data that has odds attached
+correct_long_betting <- betting_raw_out %>% 
+  gather("bet","Odds",4:6) %>%
+  mutate(correct= ifelse(((result=="Away"&bet=="B365A")|(result=="Home"&bet=="B365H")|(result=="D"&bet=="B365D")),1,0))
+
+# Bookies are right 33% of the time
+# table(correct_long_betting$correct)/nrow(correct_long_betting)
+
+correct_odds <- correct_long_betting %>% filter(correct==1)
+
+means2 <- correct_odds %>% group_by(result) %>% summarise(Odds=mean(Odds,na.rm=T))
+sds2 <- correct_odds %>% group_by(result) %>% summarise(sd=sd(Odds,na.rm=T))
+mins2 <- correct_odds %>% group_by(result) %>% summarise(min=min(Odds,na.rm=T))
+
+g2 <- ggplot(correct_odds,aes(x=Odds, group=bet))+
+  geom_boxplot(aes(color=bet)) + coord_flip() +
+  theme(legend.position = "bottom") + theme_minimal() +
+  scale_colour_manual(values=c("#008c45","#636363", "#cd212a")) +
+  xlab("") + ylab("Odds") + ggtitle("B365 Odds for Correctly Predicted Matches by Outcome") +
+  theme(legend.position="bottom",plot.title = element_text(hjust = 0.5)) +
+  labs(caption = "For seasons 2015-16 - 2019-20") + xlim(0,23)
+ 
+g2 + geom_text(aes(y = -0.32,x=20, label="Mean = 2.95 \n SD = 2.08 \n Min = 1.16")) + 
+  geom_text(aes(y = -0.0,x=20, label="Mean = 3.76 \n SD = 0.82 \n Min = 2.4")) + 
+  geom_text(aes(y = 0.32,x=20, label="Mean = 2.04 \n SD = 1.06 \n Min = 1.06"))
+
+```
+
+
 Given the higher payout of draws on average, it may make sense to re-cast the multi-nomial classification problem (Win, Loss, Draw) to a binomial classification problem with a focus on identifying draws (identifying non-draws wouldn't be helpful for betting purposes).
 
+
+```{r Draw_NonDraw, echo=FALSE,warning=FALSE,message=FALSE}
+Samp$outcome <- ifelse(Samp$outcome=="D","D","ND")
+
+Samp_train <- Samp %>% 
+  filter(season%in%c("2015-16","2016-17","2017-18")) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) %>%
+  as.data.frame() # 105 records 
+
+Samp_test <- Samp %>% 
+  filter(season%in%c("2018-19")) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 35 records
+
+Samp_holdout <- Samp %>% 
+  filter(season%in%c("2019-20")) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 21 records
+
+
+
+```
 
 
 ****
@@ -476,7 +575,10 @@ Given the higher payout of draws on average, it may make sense to re-cast the mu
 ### 8. Conclusion and Next Steps
 
   - Gather more data: xG, player-level data, etc.
-
-  - Find a way to account for class imbalance
-
-  - Investigate other modeling approaches 
+  - Find a way to account for class imbalance through over or under sampling 
+  - Investigate other modeling approaches. Caret has over [238 models](https://topepo.github.io/caret/available-models.html) that can be incorporated along with all their [tuning parameters](https://rdrr.io/cran/caret/man/models.html). 
+  
+  
+  
+  
+  

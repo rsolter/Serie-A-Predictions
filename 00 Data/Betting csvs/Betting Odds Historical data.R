@@ -1,45 +1,51 @@
 ## Betting Data Processing
 library(tidyverse)
 
+### Processing Betting Raw
 
-## Loading 
-s1 <- read.csv("00 Data/Betting csvs/I1.csv",header = T,stringsAsFactors = F) %>%
-  select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA) %>%
-  mutate(season="2019-20")
-s2 <- read.csv("00 Data/Betting csvs/I1 (1).csv",header = T,stringsAsFactors = F) %>%
-  select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA)%>%
-  mutate(season="2018-19")
-s3 <- read.csv("00 Data/Betting csvs/I1 (2).csv",header = T,stringsAsFactors = F) %>%
-  select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA) %>%
-  mutate(season="2017-18")
-s4 <- read.csv("00 Data/Betting csvs/I1 (3).csv",header = T,stringsAsFactors = F) %>%
-  select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA) %>%
-  mutate(season="2016-17")
-s5 <- read.csv("00 Data/Betting csvs/I1 (4).csv",header = T,stringsAsFactors = F) %>%
-  select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA)%>%
-  mutate(season="2015-16")
+  ## Loading 
+  s1 <- read.csv("00 Data/Betting csvs/I1.csv",header = T,stringsAsFactors = F) %>%
+    select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA,FTHG,FTAG) %>%
+    mutate(season="2019-20")
+  s2 <- read.csv("00 Data/Betting csvs/I1 (1).csv",header = T,stringsAsFactors = F) %>%
+    select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA,FTHG,FTAG)%>%
+    mutate(season="2018-19")
+  s3 <- read.csv("00 Data/Betting csvs/I1 (2).csv",header = T,stringsAsFactors = F) %>%
+    select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA,FTHG,FTAG) %>%
+    mutate(season="2017-18")
+  s4 <- read.csv("00 Data/Betting csvs/I1 (3).csv",header = T,stringsAsFactors = F) %>%
+    select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA,FTHG,FTAG) %>%
+    mutate(season="2016-17")
+  s5 <- read.csv("00 Data/Betting csvs/I1 (4).csv",header = T,stringsAsFactors = F) %>%
+    select(Date,HomeTeam,AwayTeam,B365H,B365A,B365D,BWH,BWD,BWA,FTHG,FTAG)%>%
+    mutate(season="2015-16")
+  
+  betting_raw <- rbind(s1,s2,s3,s4,s5)
+  
+  betting_raw$result <- ifelse(betting_raw$FTAG==betting_raw$FTHG,"D",
+                               ifelse(betting_raw$FTHG>betting_raw$FTAG,"Home","Away"))
+  
+  betting_raw$Date <- as.Date(strptime(betting_raw$Date,format="%d/%m/%Y"))
+  
+  # betting names to be changed: "Verona" -> "HellasVerona", "Chievo" -> "Chieveverona
+  
+  betting_raw$HomeTeam <- ifelse(betting_raw$HomeTeam=="Verona","HellasVerona",
+                                 ifelse(betting_raw$HomeTeam=="Chievo","Chievoverona",betting_raw$HomeTeam))
+  
+  betting_raw$AwayTeam <- ifelse(betting_raw$AwayTeam=="Verona","HellasVerona",
+                                 ifelse(betting_raw$AwayTeam=="Chievo","Chievoverona",betting_raw$AwayTeam))
+  
+  betting_raw <- betting_raw %>% filter(!is.na(HomeTeam))
+  
+  
+  betting_raw_out <- betting_raw %>% select(season, HomeTeam, AwayTeam, B365H,B365A,B365D,result)
+  
+  
+  save(betting_raw_out,file="00 Data/betting_raw.rdata")
 
-betting_raw <- rbind(s1,s2,s3,s4,s5)
 
 
-betting_raw_out <- betting_raw %>% select(season, HomeTeam, AwayTeam, B365H,B365A,B365D)
-
-save(betting_raw_out,file="00 Data/betting_raw.rdata")
-
-
-#### 
-
-betting_raw$Date <- as.Date(strptime(betting_raw$Date,format="%d/%m/%Y"))
-
-# betting names to be changed: "Verona" -> "HellasVerona", "Chievo" -> "Chieveverona
-
-betting_raw$HomeTeam <- ifelse(betting_raw$HomeTeam=="Verona","HellasVerona",
-                               ifelse(betting_raw$HomeTeam=="Chievo","Chievoverona",betting_raw$HomeTeam))
-
-betting_raw$AwayTeam <- ifelse(betting_raw$AwayTeam=="Verona","HellasVerona",
-                               ifelse(betting_raw$AwayTeam=="Chievo","Chievoverona",betting_raw$AwayTeam))
-
-table(betting_raw$HomeTeam%in%df_raw$Team_h) # one NA
+### Creating Betting Probabilities
 
 
 # Replacing all "odds" with 1/odds to get probabilities
