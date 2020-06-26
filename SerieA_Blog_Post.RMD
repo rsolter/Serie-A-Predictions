@@ -18,9 +18,11 @@ library(caretEnsemble)
 library(e1071)
 library(knitr)
 library(pROC)
+library(ggcorrplot)
 
-load(file="00 Data/full_raw_scraped.rdata")
+load(file="00 Data/full_raw_scraped.rdata") # Raw Data
 load(file="00 Data/italy_elos.rdata")
+load(file="00 Data/Team_split_Data.rdata") # Processed Data
 italy_elos$Club <- as.factor(italy_elos$Club)
 ```
 
@@ -93,19 +95,27 @@ knitr::kable(df_raw[1:5,])
 
 From this raw form the data has been processed in the following ways:
 
-
-#### Replacing data with lagged averages 
-All the stats collected (with the exception of Elo), have been replaced with lagged averages. The rationale for this is that we need historical performance data to try and predict future match outcomes.
-
-#### Data regrouped by team
-The full set of records is broken up by teams so that there exist +20 datasets. One for each individual team with lagged average stats on their and their opponents performance.
-
 #### Splitting data 
-From the five season in the dataset, seasons 2015-16, 2016-17, and 2017-18 are used for training, the 2018-19 season will searve as the validation set, and the 2019-20 season will serve as the holdout data.
-
-As the matches occur in chronological order, each dataset will be broken apart in such a way that the model will be built on the first _n_ observations and tested on the _n+1_ match. This is accomplished using the _time_slice()_ function in the **caret** package. A visual representation of this partition can be seen below in the bottom left quadrant. In the example below, there is a time series with 20 data points. We can fix initialWindow = 5 and look at different settings of the other two arguments. In the plot below, rows in each panel correspond to different data splits (i.e. resamples) and the columns correspond to different data points. Also, red indicates samples that are in included in the training set and the blue indicates samples in the test set. See more [here](http://topepo.github.io/caret/data-splitting.html#data-splitting-for-time-series).
+From the five season in the dataset, seasons 2015-16, 2016-17, and 2017-18 are used for training, the 2018-19 season will searve as the validation set, and the 2019-20 season will serve as the holdout data. As the matches occur in chronological order, each dataset will be broken apart in such a way that the model will be built on the first _n_ observations and tested on the _n+1_ match. This is accomplished using the _time_slice()_ function in the **caret** package. A visual representation of this partition can be seen below in the bottom left quadrant. In the example below, there is a time series with 20 data points. We can fix initialWindow = 5 and look at different settings of the other two arguments. In the plot below, rows in each panel correspond to different data splits (i.e. resamples) and the columns correspond to different data points. Also, red indicates samples that are in included in the training set and the blue indicates samples in the test set. See more [here](http://topepo.github.io/caret/data-splitting.html#data-splitting-for-time-series).
 
 ![](/assets/images/Split_time-1.svg)
+
+
+#### Data regrouped by team
+The full set of records is broken up by teams so that there exist +20 datasets, one for each team with observations ordered chronologically. The reason for doing this is that each team has its history and distribution of outcomes, so it makes sense to try and build a set of models for each team. In this regrouping the variables have been given '_team' and '_opp' suffixes to refer to the team and its opponents statistics.
+
+
+#### Replacing data with lagged averages 
+All the stats collected (with the exception of Elo), have been replaced with lagged averages from the previous 3 matches. The rationale for this is that we need historical performance data to try and predict future match outcomes Below is an example cut of the data from SS Lazio:
+
+
+```{r lagged view}
+
+ss_lazio <- final_data[[3]] %>% head(5)
+
+knitr::kable(ss_lazio[1:5,])
+
+```
 
 
 
@@ -118,9 +128,7 @@ Before starting any modeling, there are some data process and feature engineerin
 
 #### Feature selection with Random Forest
 
-There are a lot of variables collected in the match report that are likely not predictive of a matches outcome. To remove those from the dataset, a random forest is used to determine which variables are relatively unimportant. Ultimately, I drop information about penalties, free kick shots off target, shots on target from free kicks, and information about shots taken from set pieces.
-
-In contrast, it appears that the number of shots within the penalty box, total shots on target, and overall numbers of attacks are the most predictive of match outcome.  
+There are a lot of variables collected in the match report that are likely not predictive of a matches outcome. To remove those from the dataset, a random forest is used to determine which variables are relatively unimportant. Ultimately, I drop information about penalties, free kick shots off target, shots on target from free kicks, and information about shots taken from set pieces. In contrast, it appears that the number of shots within the penalty box, total shots on target, and overall numbers of attacks are the most predictive of match outcome.  
 
 
 ```{r Feature Selection using Random Forest, echo=FALSE, warning=FALSE,message=FALSE}
@@ -144,12 +152,68 @@ df_raw <- df_raw %>% select(-Variables_To_Drop)
 
 #### Feature Extraction with PCA
 
-Even after removing 10 features from the dataset, there are still a large number of predictors for each match's outcome. To reduce the number of features while maximizing the amount of variation still explained, principal components analysis was applied as a [pre-processing technique](https://topepo.github.io/caret/pre-processing.html#transforming-predictors) in caret.
+Even after removing 10 features from the dataset, there are still a large number of predictors for each match's outcome many of which are strongly correlated. For example total shots from the home team (shots_h) are strongly correlated with shots on target from the home team (shots_on_h), shots off target from the home team (shots_off_h), home scoring chances (scoring_chances_h), and saves made by the away team (saves_a). The correlation matrix below shows these correlations with unlagged data. 
+
+```{r correlation of raw data, echo=FALSE, message=FALSE, warning=FALSE}
+load(file="00 Data/full_raw_scraped.rdata") # Raw Data
+
+df_corr_ex <- df_raw %>% 
+  select(-c(outcome,match_id,match_date,season,round, Team_h, Team_a)) %>%
+  as.matrix() 
+# correlation matrix
+corr <- round(cor(df_corr_ex), 2)
+
+# using hierarchical clustering
+ggcorrplot(corr, hc.order = TRUE, outline.col = "grey",type="upper",method = "circle",
+           ggtheme = ggplot2::theme_gray, colors = c("#6D9EC1", "white", "#E46726"))
+```
+
+
+To reduce the number of features while maximizing the amount of variation still explained, principal components analysis (PCA) was applied as a [pre-processing technique](https://topepo.github.io/caret/pre-processing.html#transforming-predictors) in caret. PCA may remove interpretability of the models, but it will also help reduce the number of explanatory variables and help avoid over-fitting. 
+
+
 
 
 ```{r, eval=FALSE, echo=FALSE}
-raw_to_pca <- df_raw %>% 
-  select(-season,-round,-goals_h,-goals_a,-Team_h,-Team_a,-match_id,-match_date,-outcome)
+
+# In the chart below, we can see the key relation between the number of components ('NCOMP') and the amount of variance present in the original dataset is explained. As an example, the point for 10 principal components is highlighted in red; 10 principal components explains 77.5% of variance:
+
+# Partitioning Sampdoria Data
+Samp <- final_data[[17]]
+
+# removing First three records for each season 
+Samp <- Samp[complete.cases(Samp), ]
+
+Samp_train <- Samp %>% 
+  filter(season%in%c("2015-16","2016-17","2017-18","2018-19")) %>%
+  select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) %>%
+  as.data.frame() %>% # 140 records 
+  select(-outcome)
+
+
+
+# Scree Plot
+
+scree_df <- data.frame(Threshold_Var=NA,NComp=NA)
+
+seq_V <- seq(.4,1,by=0.025)
+
+for (i in 1:length(seq_V)){
+  
+  tmp_pca <- preProcess(Samp_train, method = "pca", thresh =  seq_V[i])
+  
+  #var_explained <- tmp_pca$thresh
+  
+  scree_df[i,1] <- seq_V[i]
+  scree_df[i,2] <- tmp_pca$numComp
+}
+
+
+ggplot(scree_df,aes(NComp,Threshold_Var)) + 
+  geom_point() + geom_line() + theme_minimal() +
+  geom_point(aes(x=10, y=0.775), colour="red", size=2.5) + 
+  xlab("Number of Components") + ylab("Proportion of Variance Explained")
+
 
 ```
 
@@ -162,7 +226,6 @@ It's worthwhile to point out that the distribution of outcomes is naturally diff
 
 ```{r outcome_viz,message=FALSE,warning=FALSE,error=FALSE,echo=FALSE}
 
-load(file="00 Data/Team_split_Data.rdata")
 
 outcomes <- data.frame(team=NA,D=NA,L=NA,W=NA)
 
@@ -211,7 +274,7 @@ p
 
 ### 6. Illustrative Example with U.C Sampdoria
 
-The records for Sampdoria have been broken apart into two datasets: `Samp_train` with records from the "2015-16","2016-17","2017-18", and "2018-19" seasons and  `Samp_test` which has records from the '2019-20` season. Each dataset has been scrubbed of the first three records from each season as they do not have lagged average values for the various features. Various models will be trained on the `Samp_train` set and then tested individually and in an ensemble on the `Samp_holdout` set.
+The records for Sampdoria have been broken apart into two datasets: `Samp_train` with records from the "2015-16","2016-17","2017-18", and "2018-19" seasons and  `Samp_test` which has records from the '2019-20' season. Each dataset has been scrubbed of the first three records from each season as they do not have lagged average values for the various features. Various models will be trained on the `Samp_train` set and then tested individually and in an ensemble on the `Samp_test` set.
 
 
 ```{r Sampdoria, echo=FALSE}
@@ -232,43 +295,50 @@ Samp_test <- Samp %>%
   select(-c(match_id,match_date,season,round,Team,Opp,Points_gained,B365_team,B365_opp,B365D)) # 21 records
 
 
-# Some useful links
-  # https://stats.stackexchange.com/questions/287569/do-i-need-a-test-set-when-using-time-series-cross-validation
-  # https://machinelearningmastery.com/machine-learning-evaluation-metrics-in-r/
-  # https://stackoverflow.com/questions/59669490/error-with-caret-and-summaryfunction-mnlogloss-columns-consistent-with-lev
-  # https://www.kaggle.com/chrisbow/breast-cancer-prediction-using-the-caret-package/notebook
-  # https://www.kaggle.com/rtatman/picking-the-best-model-with-caret
-  # https://www.kaggle.com/rtatman/machine-learning-with-xgboost-in-r#What-is-XGBoost?
-  # https://towardsdatascience.com/machine-learning-multiclass-classification-with-imbalanced-data-set-29f6a177c1a
-  # https://machinelearningmastery.com/tactics-to-combat-imbalanced-classes-in-your-machine-learning-dataset/
-
-
+  
 ```
+
+
+Before modeling, caret's _trainControl_ function can be used to set up the training dataset in the same way for each model. In this case, the training dataset is being partitioned using the timeslice function so that the initial training data is made up of 10 observations (initialWindow) to predict the next match (horizon=1). This process is continued for each prediction with all historical data being used (fixedWindow=FALSE). **Note** that in this post, none of the models have had their hyperparameters tuned.
+
+
+```{r Train Control,echo=TRUE}
+myTimeControl <- trainControl(method = "timeslice",
+                              initialWindow = 10,
+                              horizon = 1,
+                              fixedWindow = FALSE,
+                              summaryFunction = mnLogLoss,
+                              classProbs = TRUE)
+```
+
+#### Evaluation Metrics
+
+Each of the models will be measured by the same evaluation metrics:
+
+- **Accuracy** _(TruePositives+TrueNegatives/N)_ The number of correct predictions divided by total number of predictions
+
+- **Precision** _(TruePositives/(TruePositives + FalsePositives))_ The true positive rate class (e.g. Of the number of draws predicted, the proption of correctly predicted draws)
+
+- **Recall/Sensitivity** _(TruePositives/(TruePositives + FalseNegatives))_ The true negative rate by class (e.g. Of the number of draws in the test dataset, the number of correctly predicted draws).
 
 
 
 #### Multinomial Logistic Regression
 
-Tuning parameters: 
+The multinomial logistic regression approach is done using the 'nnet' package. Below you can see the summary of the model run, the confusion matrix is printed for a quick evaluation of this model. 
 
-_Weight Decay (decay, numeric)_
+- **Accuracy** of the model is 42.86% 
 
+- **Precision** among the classes is 25.0% for draws, 66.7% for losses, and 42.8% for wins
+
+- **Recall/Sensitivity** was 40.0% for draws, 40.0% for losses, and 50.0% for wins. 
 
 
 ```{r Multinomial Regression, echo=FALSE, message=FALSE,warning=FALSE}
 
-# Setting up the training controls to make use of timeslice function
-  # may want to have the trainControl run through diferent lengths of initial windows and different number of components for PAC
-myTimeControl <- trainControl(method = "timeslice",
-                              initialWindow = 10,
-                              horizon = 1,
-                              fixedWindow = FALSE,
-                              allowParallel = TRUE,summaryFunction = mnLogLoss,classProbs = TRUE)
-                              #,preProcOptions = )
-
 # Training multinomial model
 set.seed(555)
-samp_mult_log = train(
+multinom_fit = train(
   outcome ~ .,
   data = Samp_train,
   method = "multinom",
@@ -278,209 +348,284 @@ samp_mult_log = train(
   trace=FALSE
 )
 
-mult_log_pred <- predict(samp_mult_log,Samp_test)
-confusionMatrix(mult_log_pred, as.factor(Samp_test$outcome),mode = "prec_recall")
+### Model 
+# multinom_fit
 
-mult_log_pred_prob <- predict(samp_mult_log,Samp_test,type="prob")
+### Training Accuracy -- 61.4%
+multinom_train_acc <- table(Samp_train$outcome==predict(multinom_fit,Samp_train))/length(Samp_train$outcome)
+multinom_train_acc_T <- multinom_train_acc[2]
 
-mult_log_pred_out <- cbind(mult_log_pred_prob,Samp_test$outcome,mult_log_pred) %>% as.data.frame()
-names(mult_log_pred_out) <- c("D","L","W","Actual","Pred")
-mult_log_pred_out %>% 
-  mutate(Accuracy=ifelse(Actual==Pred,1,0)) %>% 
-  select(Actual,Pred,Accuracy,D,L,W)
+### Test Results
+multinom_test <- predict(multinom_fit,Samp_test)
+c1 <- confusionMatrix(multinom_test, as.factor(Samp_test$outcome),mode = "prec_recall")
+c1
 
-#Predictions1_p <- predict(samp_mult_log,Samp_test,type = "prob")
-#Predictions1_p <- round(Predictions1_p,5)
+# Outcome Probabilities
+multinom_test_prob <- predict(multinom_fit,Samp_test,type="prob")
+# Test Accuracy - 42.8%
+multinom_test_acc <- c1$overall[[1]]
 
-#Predictions1_p <- cbind(Predictions1_p,Predictions1,Samp_test$outcome)
-#names(Predictions1_p) <- c("D","L","W","Predicted","Actual")
-
-#Predictions1_p <- Predictions1_p %>% 
-#  mutate(Correct=ifelse(Predictions1_p$Predicted==Predictions1_p$Actual,1,0)) %>%
-#  mutate(Cum_Correct=cummean(Correct)) %>%
-#  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
-#  mutate(Round=4:38)
-
-
-#ggplot(Predictions1_p) +
-#  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
-#  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
-#  xlab("Round") + ylab("Accuracy Rate") + 
-#  ggtitle("Validation Dataset Accuracy of Multinomial Logistic Regression") +
-#  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
-#  theme_minimal() +
-#  ylim(0,1)
+#mult_log_pred_out <- cbind(mult_log_pred_prob,Samp_test$outcome,mult_log_pred) %>% as.data.frame()
+#names(mult_log_pred_out) <- c("D","L","W","Actual","Pred")
+# Also, the individual predictions and associated probabilities for Sampdoria's first 21 matches in the 2019-20 season are printed below:
+#mult_log_pred_out %>% 
+#  mutate(Accuracy=ifelse(Actual==Pred,1,0)) %>% 
+#  select(Actual,Pred,Accuracy,D,L,W)
+# Training multinomial model
+#set.seed(555)
+#samp_mult_log2 = train(
+#  outcome ~ .,
+#  data = Samp_train,
+#  method = "multinom",
+#  trControl = myTimeControl,
+#  metric="logLoss",
+#  trace=FALSE
+#)
+#samp_mult_log2
+#mult_log_pred2 <- predict(samp_mult_log2,Samp_test)
+#confusionMatrix(mult_log_pred2, as.factor(Samp_test$outcome),mode = "prec_recall")
 
 ```
 
 
+
+
 #### SVM
+
+The second model tried out is a support vector machine from the 'kernlab' package. 
+
+- Notably, the model predicts losses for over 85% of the matches in the test set
+- Training accuracy was 54.2%
+- The overall test accuracy of the model is 47.62%
+- Precision among the classes is 0% for draws, 50.0% for losses, and 50.0% for wins.
+- Recall is 0% for draws, 90% for losses, and 16.7% for wins. 
+
+
 
 ```{r SVM, echo=FALSE,message=FALSE,warning=FALSE}
 
-samp_svm = train(
+# Support-Vector Machine Modeling
+set.seed(555)
+svmLinear_fit = train(
   outcome ~ .,
   data = Samp_train,
   method = "svmLinear",
   preProc = c("pca"),
   trControl = myTimeControl,
   metric="logLoss",
-
-) 
-
-Predictions3 <- predict(samp_svm,Samp_test)
-confusionMatrix(Predictions2, as.factor(Samp_test$outcome),mode = "prec_recall")
-
-#Predictions2_p <- predict(samp_svm,Samp_test,type = "prob")
-#Predictions2_p <- round(Predictions1_p,5)
-
-Predictions2_p <- cbind(as.character(Predictions2),as.character(Samp_test$outcome)) %>% as.data.frame()
-names(Predictions2_p) <- c("Predicted","Actual")
-
-
-Predictions2_p <- Predictions2_p %>% 
-  mutate(Correct=ifelse(Predictions2_p$Predicted==Predictions2_p$Actual,1,0)) %>%
-  mutate(Cum_Correct=cummean(Correct)) %>%
-  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
-  mutate(Round=4:38)
-
-
-ggplot(Predictions2_p) +
-  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
-  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
-  xlab("Round") + ylab("Accuracy Rate") + 
-  ggtitle("Validation Dataset Accuracy of Support Vector Machine Model") +
-  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
-  theme_minimal() +
-  ylim(0,1)
-
-
-```
-
-
-#### Random Forest - Ranger
-
-
-Tuning parameters: 
-
-_Number of Randomly Selected Predictors (mtry, numeric)_
-
-_Splitting Rule (splitrule, character)_
-
-_Minimal Node Size (min.node.size, numeric)_
-
-
-
-```{r RandomForest, echo=FALSE,message=FALSE,warning=FALSE}
-
-samp_rf = train(
-  outcome ~ .,
-  data = Samp_train,
-  method = "rf",
-  preProc = c("pca"),
-  trControl = myTimeControl
-) 
-
-Predictions3 <- predict(samp_rf,Samp_test)
-confusionMatrix(Predictions3, as.factor(Samp_test$outcome),mode = "prec_recall")
-
-Predictions3_p <- predict(samp_rf,Samp_test,type = "prob")
-Predictions3_p <- round(Predictions3_p,5)
-
-Predictions3_p <- cbind(Predictions3_p,Predictions3,Samp_test$outcome) %>% as.data.frame()
-names(Predictions3_p) <- c("D","L","W","Predicted","Actual")
-
-Predictions3_p <- Predictions3_p %>% 
-  mutate(Correct=ifelse(Predictions3_p$Predicted==Predictions3_p$Actual,1,0)) %>%
-  mutate(Cum_Correct=cummean(Correct)) %>%
-  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
-  mutate(Round=4:38)
-
-ggplot(Predictions3_p) +
-  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
-  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
-  xlab("Round") + ylab("Accuracy Rate") + 
-  ggtitle("Validation Dataset Accuracy of Random Forest Model") +
-  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
-  theme_minimal() +
-  ylim(0,1)
-```
-
-
-```{r Ranger, echo=FALSE, message=FALSE,warning=FALSE}
-
-samp_ranger <- train(
-  outcome ~ .,
-  data=Samp_train,
-  method='ranger',
-  preProcess = c('pca'),
-  metric = "accuracy",
-  trControl = myTimeControl
+  trace=FALSE
 )
 
+#svmLinear_fit
+
+### Training Accuracy -- 54.2%
+svmLinear_train_acc <- table(Samp_train$outcome==predict(svmLinear_fit,Samp_train))/length(Samp_train$outcome)
+svmLinear_train_acc_T <- svmLinear_train_acc[2]
+
+### Test Results
+svmLinear_test <- predict(svmLinear_fit,Samp_test)
+c2 <- confusionMatrix(svmLinear_test, as.factor(Samp_test$outcome),mode = "prec_recall")
+c2
+
+# Outcome Probabilities
+svmLinear_test_prob <- predict(svmLinear_fit,Samp_test,type="prob")
+# Test Accuracy - 47.6%
+svmLinear_test_acc <- c2$overall[[1]]
+
+
 ```
 
 
-#### Naive-Bayes
+#### C5.0  
 
-```{r Naive-Bayes, echo=FALSE,message=FALSE,warning=FALSE}
+The C5.0 is tree-based algorithm which produces the highest overall accuracy of all the models tested thus far.
 
-samp_nb = train(
+- In general, the random forest over-estimates wins, but has an overall test accuracy of 61.9%.
+- Precision among the classes is 66.7% for draws, 85.7% for losses, and 45.4% for wins.
+- Recall is 40.0% for draws, 60.0% for losses, and 83.3% for wins. 
+
+
+```{r C5.0, echo=FALSE,message=FALSE,warning=FALSE}
+
+# C5.0 Model
+set.seed(500)
+c50_fit = train(
   outcome ~ .,
   data = Samp_train,
-  method = "naive_bayes",
+  method = "C5.0",
   preProc = c("pca"),
-  trControl = myTimeControl
-) 
+  trControl = myTimeControl,
+  metric="logLoss",
+  trace=FALSE
+)
 
-Predictions4 <- predict(samp_nb,Samp_test)
-confusionMatrix(Predictions4, as.factor(Samp_test$outcome),mode = "prec_recall")
+#c50_fit
 
+### Training Accuracy -- 91.4%
+c50_fit_train_acc <- table(Samp_train$outcome==predict(c50_fit,Samp_train))/length(Samp_train$outcome)
+c50_fit_train_acc_T <- c50_fit_train_acc[2]
 
+### Test Results
+c50_fit_test <- predict(c50_fit,Samp_test)
+c2 <- confusionMatrix(c50_fit_test, as.factor(Samp_test$outcome),mode = "prec_recall")
+c2
 
-Predictions4_p <- predict(samp_nb,Samp_test,type = "prob")
-Predictions4_p <- round(Predictions4_p,5)
-
-Predictions4_p <- cbind(Predictions4_p,Predictions4,Samp_test$outcome) %>% as.data.frame()
-names(Predictions4_p) <- c("D","L","W","Predicted","Actual")
-
-
-Predictions4_p <- Predictions4_p %>% 
-  mutate(Correct=ifelse(Predictions4_p$Predicted==Predictions4_p$Actual,1,0)) %>%
-  mutate(Cum_Correct=cummean(Correct)) %>%
-  mutate(Roll_mean_Correct=zoo::rollmean(Correct,k=5,align="right",fill=NA)) %>%
-  mutate(Round=4:38)
-
-
-ggplot(Predictions4_p) +
-  geom_line(aes(x=Round,y=Cum_Correct), colour="dark green") +
-  geom_line(aes(x=Round,y=Roll_mean_Correct),linetype=2) +
-  xlab("Round") + ylab("Accuracy Rate") + 
-  ggtitle("Validation Dataset Accuracy of Naive Bayes Model") +
-  labs(caption="Cumulative Accuracy in green, dotted-line is rolling average of accuracy") +
-  theme_minimal() +
-  ylim(0,1)
+# Outcome Probabilities
+C5_test_prob <- predict(c50_fit,Samp_test,type="prob")
+# Test Accuracy - 47.6%
+c5_test_acc <- c2$overall[[1]] #61%
 
 
 ```
 
-#### Ensemble
+
+
+
 
 ****
 
+#### Ensemble Method
+
+In statistics and machine learning, ensemble methods leverage multiple machine learning models to obtain a single set of predictions informed by all the original models. Essentially, each model gets to "vote" on the outcome and the majority or plurality outcome is the winner.
+
+Whiel the package 'caretEnsemble' supports adding a ensemble method to the end of the modeling pipeline, it doesn't support the timeslice feature used above, so a custom, basic approach is used where each model's predictions are weighted by that model's overall stest accuracy.
+
+Below you can see the results from 21 matches from Sampdoria's 2019-20 season, specifically rounds 4-24.  In total 13 of those matches were correctly predicted.
+
+```{r Weighting Probabilities, echo=F}
+
+probabilities <- c(multinom_test_prob,svmLinear_test_prob,C5_test_prob)
+acc_weights <- c(multinom_train_acc_T,svmLinear_train_acc_T,c50_fit_train_acc_T)
+acc_weights2<-acc_weights/sum(acc_weights)
+
+weighted_probabilities<-((multinom_test_prob*acc_weights2[1]) + (svmLinear_test_prob*acc_weights2[2]) + (C5_test_prob*acc_weights2[3])) %>% as.data.frame()
+
+weighted_probabilities$prediction <- colnames(weighted_probabilities)[apply(weighted_probabilities,1,which.max)]
+
+weighted_probabilities$actual <- Samp_test$outcome
+
+wpf <- weighted_probabilities %>% 
+  mutate(Accuracy=ifelse(actual==prediction,1,0)) %>% 
+  select(actual,prediction,Accuracy,D,L,W)
+
+wpf$D <- round(wpf$D,3)
+wpf$L <- round(wpf$L,3)
+wpf$W <- round(wpf$W,3)
+
+Test_clubs <- Samp %>% filter(season=="2019-20") %>% select(match_date,Team,Opp) %>% as.data.frame()
+
+wpf <- cbind(Test_clubs,wpf)
+
+wpf
+```
+
+
+****
 
 #### Results
 
+So how much money could have theoretically been made on those matches? Using historical betting odds from Bet365, we can see what payouts would have been earned at dependent upon how much faith was put in the ensemble model. For example, I may only want to place a bet on an outcome if the most likely outcome predicted by my ensemble has a probability greater than 0.55.
+
+Using the table above, I attach the ensemble payouts for each match if the outcome with the highest probability was bet on.
+
+Next I iterate through different minimum probabilities required to place a bet (cut_off) to see how that would affect the number of matches bet upon and the total return. 
+
+
+```{r Samp B365, echo=FALSE}
+
+load(file="00 Data/betting_raw.rdata")
+samp_2019_bet <- betting_raw_out %>% 
+  filter(season=="2019-20") %>% 
+  filter(HomeTeam=="Sampdoria"|AwayTeam=="Sampdoria") 
+
+samp_2019_bet$ensemble_pay_out <- ifelse(samp_2019_bet$result=="Away",
+                                        samp_2019_bet$B365A,
+                                      ifelse(samp_2019_bet$result=="Home",
+                                             samp_2019_bet$B365H,
+                                             samp_2019_bet$B365D)) 
+
+samp_2019_bet <- samp_2019_bet[4:24, ]
+
+wpf$ensemble_pay_out <- samp_2019_bet$ensemble_pay_out
+wpf$ensemble_pay_out <- ifelse(wpf$Accuracy==1,wpf$ensemble_pay_out,-1.0)
+
+#sum(wpf$correct_payout)
+
+
+#wpf$prob_greater_than_50 <- ifelse(wpf$D>=.5|wpf$L>=.5|wpf$W>=.5,1,0)
+
+#gt50 <- wpf %>% filter(prob_greater_than_50==1) 
+
+#gt50$correct_payout %>% sum()
+
+out <- data.frame(cut_off=NA,num_bets=NA,return=NA,profit=NA)
+
+
+cut_offs <- seq(.50,.75,by=0.01)
+
+for(i in 1:length(cut_offs)){
+  wpf_t <- wpf
+  tmp_prob <- cut_offs[i]
+  wpf_t$prob_greater_than_cutoff <- ifelse(wpf_t$D>=tmp_prob|wpf_t$L>=tmp_prob|wpf_t$W>=tmp_prob,1,0)
+  
+  wpf_t <- wpf_t %>% filter(prob_greater_than_cutoff==1)
+  
+  num_bets <- nrow(wpf_t)
+  return <- sum(wpf_t$ensemble_pay_out)
+  profit <- return-num_bets
+
+  out[i,1] <- tmp_prob 
+  out[i,2] <- num_bets 
+  out[i,3] <- return 
+  out[i,4] <- profit 
+}
+
+out
+
+
+ggplot(out,aes(x=cut_offs,y=profit)) + geom_path() + xlab("Probability Cut Off")+ ylab("Number of Bets Placed") + theme_minimal()
+
+```
+
+
+You might expect this char to look different. You might expect the fewer, higher likelihood bets made, the more profit to be returned and for this line to always trend upwards. However...  
 
 
 ****
 
 
-### 7. Considering Betting on Draws 
+
+### 7. Ensemble Accuracy For Other Teams
+
+Running the same approach on all teams who have been in Serie A for each of the five recorded seasons, there is a great variety in the amount of accuracy of the ensemble method by team:
+
+```{r, echo=FALSE}
+load(file="ensmeble_results_all_teams.rdata")
+
+ensemble_results <- data.frame("Team"=NA,"Ensemble Accuracy"=NA)
+for(i in 1:length(all_team_results)){
+  
+  tmp <- all_team_results[[i]]
+  ensemble_results[i,1] <- tmp[[2]]$Team %>% unique()
+  ensemble_results[i,2] <- tmp[[3]]
+}
+
+ensemble_results <- ensemble_results %>% arrange(Ensemble.Accuracy)
+
+knitr::kable(ensemble_results)
+
+```
+
+
+
+****
+
+
+### 8. Considering Betting on Draws 
 
 Soccer is different from every other popular sport in that it allows for draws. For the casual sports fan who is drawn to watching sports to see two teams compete and a winner declared, this can seem incredibly boring. 
 
-This mentality is reflected in the odds offered by odds makers who consistently offer slightly better odds on draws, because casual punters are more likely to bet on one of the two teams winning. This is reflected in the historical odds data for Serie A. Draws have a minimum odds of 2.4, over twice the minimum of either home or away outcomes. Average returns are highest for an away win (4.86), then a draw (4.06), and last a home win (2.86). This is unsurprisngly if we consider how home advantage affects matches.
+This mentality is reflected in the odds offered by odds makers who consistently offer slightly better odds on draws, because casual punters are more likely to bet on one of the two teams winning. This is reflected in the historical odds data for Serie A. Draws have a minimum odds of 2.4, over twice the minimum of either home or away outcomes. Average returns are highest for an away win (4.86), then a draw (4.06), and last a home win (2.86). This is unsurprising if we consider how home advantage affects matches.
 
 ```{r Betting on Draws, echo=FALSE,warning=FALSE,message=FALSE}
 
@@ -564,21 +709,61 @@ Samp_holdout <- Samp %>%
 ```
 
 
-****
-
-### 7. Overall Results
-
 
 
 ****
 
-### 8. Conclusion and Next Steps
+### 9. Conclusion and Next Steps
 
+  - Expand this approach to all the other teams in the dataset and account for  class imbalance through over or under sampling 
+  - Investigate other modeling approaches. Caret has over [238 models](https://topepo.github.io/caret/train-models-by-tag.html) that can be incorporated along with all their tuning parameters. 
   - Gather more data: xG, player-level data, etc.
-  - Find a way to account for class imbalance through over or under sampling 
-  - Investigate other modeling approaches. Caret has over [238 models](https://topepo.github.io/caret/available-models.html) that can be incorporated along with all their [tuning parameters](https://rdrr.io/cran/caret/man/models.html). 
   
   
   
   
-  
+
+
+```{r, echo=FALSE, eval=FALSE}
+
+
+# Some useful links
+  # https://stats.stackexchange.com/questions/287569/do-i-need-a-test-set-when-using-time-series-cross-validation
+  # https://machinelearningmastery.com/machine-learning-evaluation-metrics-in-r/
+  # https://stackoverflow.com/questions/59669490/error-with-caret-and-summaryfunction-mnlogloss-columns-consistent-with-lev
+  # https://www.kaggle.com/chrisbow/breast-cancer-prediction-using-the-caret-package/notebook
+  # https://www.kaggle.com/rtatman/picking-the-best-model-with-caret
+  # https://www.kaggle.com/rtatman/machine-learning-with-xgboost-in-r#What-is-XGBoost?
+  # https://towardsdatascience.com/machine-learning-multiclass-classification-with-imbalanced-data-set-29f6a177c1a
+  # https://machinelearningmastery.com/tactics-to-combat-imbalanced-classes-in-your-machine-learning-dataset/
+
+
+# Hyper parameter tuning
+  # https://www.kaggle.com/madcap/hyperparameter-tuning-with-caret
+
+# Hyper parameter for ranger
+  # https://stackoverflow.com/questions/48334929/r-using-ranger-with-caret-tunegrid-argument
+
+# Hyper parameter for nnet
+  # https://stackoverflow.com/questions/42417948/how-to-use-size-and-decay-in-nnet
+
+# Interpreting confusion matrix
+  # https://towardsdatascience.com/decoding-the-confusion-matrix-bb4801decbb
+
+# caretEnsemble
+  # https://cran.r-project.org/web/packages/caretEnsemble/vignettes/caretEnsemble-intro.html
+
+# Evaluation -- Kappa
+  # https://towardsdatascience.com/multi-class-metrics-made-simple-the-kappa-score-aka-cohens-kappa-coefficient-bdea137af09c
+
+# Ensemble THeory - Boosting and Bagging
+  # https://towardsdatascience.com/simple-guide-for-ensemble-learning-methods-d87cc68705a2
+
+# Classification Algorithms from Sci-kit learn
+  # https://scikit-learn.org/stable/modules/multiclass.html
+
+```
+
+
+
+_Code for this project can be found on my [GitHub](https://github.com/rsolter/Serie-A-Predictions)_
