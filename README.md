@@ -1,4 +1,4 @@
-### SerieA Prediction
+### Serie A Prediction
 
 This is a personal project built to predict the outcomes of Italian football (Serie A) matches. The data used includes match-level observational data and ELO ratings and spans the 2015-16 season through 2019-20.
 
